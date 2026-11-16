@@ -5,6 +5,7 @@ import type { Analyzer } from './analysis/analyzer.js'
 import type { Config } from './config.js'
 import { analyzeRoute } from './http/analyze-route.js'
 import { errorHandler, sendError } from './http/error-handler.js'
+import { createRateLimiters } from './http/rate-limit.js'
 
 export interface AppDeps {
   analyzer: Analyzer
@@ -16,6 +17,8 @@ export interface AppDeps {
 /** Builds the app from its dependencies, so tests inject a fake analyzer (D3). */
 export function createApp(deps: AppDeps): Express {
   const app = express()
+  // How many proxy hops to trust when reading the client IP from X-Forwarded-For (D7).
+  app.set('trust proxy', deps.config.trustProxy)
   app.use(helmet())
 
   // Infra probe: never parsed, never rate limited.
@@ -24,6 +27,8 @@ export function createApp(deps: AppDeps): Express {
   })
 
   const api = express.Router()
+  // Before body parsing, so malformed and oversized requests count too (D8).
+  api.use('/analyze', ...createRateLimiters(deps.config.rateLimit))
   api.use(express.json({ limit: '20kb' }))
   api.post('/analyze', analyzeRoute(deps.analyzer))
   // Anything else under /api: same error shape as every other API error (D11).

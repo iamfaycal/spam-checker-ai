@@ -24,6 +24,7 @@
     "@spam-checker/shared": "^0.0.0",
     "ai": "^7.0.173",
     "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
     "helmet": "^8.3.0",
     "zod": "^4.6.7"
   }

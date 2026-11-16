@@ -51,7 +51,9 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - Global: 12/min (503 `LLM_UNAVAILABLE`) and 400/day (503 `DAILY_CAP_REACHED`).
   - `express-rate-limit` with the in-memory store. All values come from env.
 - **Alternatives:** per-IP only (many IPs together exceed Google's RPM); Redis store (needed only with several instances); CAPTCHA (friction, overkill for a demo).
-- **Consequences:** our limits fire before Google's. The single-instance limitation is documented, and the fix is a Redis store.
+- **Consequences:**
+  - Our limits fire before Google's. The single-instance limitation is documented, and the fix is a Redis store.
+  - Only the per-IP limiters send `RateLimit` headers (draft-8). The global ones send none, because they would overwrite the visitor's own numbers with the shared counter. Every rejection carries `Retry-After`.
 
 ## D7 — `trust proxy = 1` — accepted
 
@@ -67,7 +69,10 @@ New entries are added during the build (see "Working agreement" in the plan). St
 - **Context:** a 400 costs nothing to us, but unlimited 400s allow probing and log flooding.
 - **Decision:** limiters run before validation.
 - **Alternatives:** `skipFailedRequests` (friendlier to typos).
-- **Consequences:** a user who sends an empty text spends one request. That's acceptable, and the UI also disables the button on empty text.
+- **Consequences:**
+  - A user who sends an empty text spends one request. That's acceptable, and the UI also disables the button on empty text.
+  - The limiters are mounted on `/api/analyze` before `express.json()`, so an oversized (413) or malformed (400) body also counts.
+  - Rejected requests also count toward the global caps, although they never reach Google. An attacker could drain the global budget with invalid requests, but each IP still stops at 5/min and 20/day, and valid requests would drain it just as fast.
 
 ## D9 — Input limits — accepted
 
