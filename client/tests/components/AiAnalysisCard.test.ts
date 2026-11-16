@@ -146,6 +146,29 @@ describe('AiAnalysisCard', () => {
     expect(button(wrapper, 'Re-analyze').exists()).toBe(true)
   })
 
+  describe('Undo is never out of reach while the editor holds the rewrite', () => {
+    it.each([
+      ['the re-analysis failed', { status: 'error', error: new ApiError('DAILY_CAP_REACHED') }],
+      ['the re-analysis is running', { status: 'loading' }],
+      ['the analysis is fresh', { status: 'success', result: RESULT }],
+      ['the analysis is stale', { status: 'success', result: RESULT, isStale: true }],
+    ] as const)('offers Undo when %s', async (_, state) => {
+      const wrapper = card({ ...state, canUndo: true })
+      await button(wrapper, 'Undo rewrite').trigger('click')
+      expect(wrapper.emitted('undo')).toHaveLength(1)
+    })
+
+    it('hides Undo while a new rewrite is running (it would be dropped after spending quota)', () => {
+      const wrapper = card({
+        status: 'success',
+        result: RESULT,
+        canUndo: true,
+        rewriteStatus: 'loading',
+      })
+      expect(wrapper.findAll('button').some((b) => b.text().includes('Undo'))).toBe(false)
+    })
+  })
+
   it('stale: dims the result, says why, and offers Re-analyze', async () => {
     const wrapper = card({ status: 'success', result: RESULT, isStale: true })
     expect(wrapper.get('.result').classes()).toContain('result--stale')
@@ -174,6 +197,12 @@ describe('AiAnalysisCard', () => {
       await vi.advanceTimersByTimeAsync(2000)
       expect(button(wrapper, 'Try again').attributes('disabled')).toBeUndefined()
     })
+  })
+
+  it('tells visitors, before they send anything, that the text goes to a free-tier AI service', () => {
+    const notice = card().get('.ai-card__privacy').text()
+    expect(notice).toContain('Google')
+    expect(notice).toMatch(/don't paste confidential emails/i)
   })
 
   describe('accessibility', () => {

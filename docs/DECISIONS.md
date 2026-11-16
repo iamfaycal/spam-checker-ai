@@ -41,7 +41,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
 - **Context:** cheap demo; measured free quota: 15 RPM, 250K TPM, 500 RPD per Cloud project.
 - **Decision:** `gemini-3.5-flash-lite` on a Cloud project used only for this demo.
 - **Alternatives:** paid tier (no data-usage caveat, costs money); bigger model (slower, unnecessary for short emails).
-- **Consequences:** Google may use free-tier inputs for training. This is stated in the README. Quota drives D6.
+- **Consequences:** Google may use free-tier inputs for training. This is stated in the README **and in the app**, under the Analyze button, where visitors actually decide to send their text. Quota drives D6.
 
 ## D6 — Four rate limiters, in-memory — accepted
 
@@ -141,6 +141,8 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - `canUndo` is derived: true only while the editor still holds exactly the rewritten text. Any hand edit hides Undo, with no extra bookkeeping. Undo stays offered after re-analyzing the rewrite.
   - The editor is read-only while a rewrite runs, and the composable refuses to apply a rewrite if the text changed meanwhile, so typed text is never overwritten.
   - Undo restores the original byte for byte (tested with whitespace, tabs and newlines).
+  - The Undo button is rendered outside the analysis states, so it stays reachable even when the re-analysis of a rewrite fails (for example, the daily cap is reached) or is still running. It is hidden only while a new rewrite runs.
+  - Undo is one level: after a second rewrite it restores the first rewrite, not the original.
 
 ## D16 — Spam rules ported from the existing tool — accepted
 
@@ -170,6 +172,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - Three stages: build (all deps), deps (`npm ci --omit=dev` for server and shared only), and runtime (those deps + `shared/dist`, `server/dist`, `client/dist`). The image runs as `node`, with exec-form `CMD` so node receives `SIGTERM`. Checked: healthy, page + assets + SPA fallback, a live analysis, no CSP errors in a browser, and a clean stop in under 1 s.
   - The client's packages (`vue`, `zod`, `shared`) are **devDependencies**: Vite bundles them into static files at build time. As runtime deps, Vue's optional TypeScript peer leaked into the production install (TypeScript is about 23 MB). Moving them took the image from 227 to 198 MB.
   - CI builds the image and smoke-tests it (healthy, `/api/health`, the page) after the test job.
+  - **The image must be served over HTTPS.** helmet's default CSP includes `upgrade-insecure-requests`. On the first, plain-HTTP deploy (Coolify's sslip.io address), browsers fetched the JS and CSS over HTTPS, hit Traefik's self-signed certificate, and showed a blank page. Since the demo is HTTPS-only (Let's Encrypt), helmet's defaults are kept, and the README's deploy steps require HTTPS.
 
 ## D19 — Git workflow: feature branches + PRs, CI from day one — accepted
 

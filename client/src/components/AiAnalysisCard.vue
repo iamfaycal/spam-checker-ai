@@ -122,14 +122,6 @@ const canAnalyze = computed(() => !props.disabledReason)
         >
           Re-analyze
         </button>
-        <button
-          v-if="canUndo"
-          type="button"
-          class="btn btn--secondary btn--spaced"
-          @click="$emit('undo')"
-        >
-          Undo rewrite
-        </button>
       </template>
 
       <!-- Rewrite applies these suggestions, so it's only offered while they match the text. -->
@@ -145,15 +137,6 @@ const canAnalyze = computed(() => !props.disabledReason)
         <p v-if="rewriteStatus === 'error'" class="ai-card__error ai-card__error--below">
           {{ rewriteMessage }}
         </p>
-        <!-- After re-analyzing a rewrite, the original can still be brought back. -->
-        <button
-          v-if="canUndo"
-          type="button"
-          class="btn btn--secondary btn--spaced"
-          @click="$emit('undo')"
-        >
-          Undo rewrite
-        </button>
       </template>
 
       <button
@@ -169,7 +152,24 @@ const canAnalyze = computed(() => !props.disabledReason)
       <p v-if="disabledReason && status !== 'loading'" class="ai-card__hint">
         {{ disabledReason }}
       </p>
+
+      <!-- Whatever the analysis is doing, the original email stays one click away (D15).
+           Hidden only while a new rewrite runs: its answer would be dropped after spending quota. -->
+      <button
+        v-if="canUndo && rewriteStatus !== 'loading'"
+        type="button"
+        class="btn btn--secondary btn--spaced"
+        @click="$emit('undo')"
+      >
+        Undo rewrite
+      </button>
     </div>
+
+    <!-- The demo runs on Gemini's free tier (D5): say so where the text is sent, not only in the README. -->
+    <p class="ai-card__privacy">
+      Text sent to the AI goes to Google's Gemini free tier, which may use it to improve its
+      products. Don't paste confidential emails.
+    </p>
   </section>
 </template>
 
@@ -252,6 +252,13 @@ const canAnalyze = computed(() => !props.disabledReason)
 .ai-card__error--below {
   margin-top: 0.5rem;
   font-size: 0.825rem;
+}
+
+.ai-card__privacy {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted);
 }
 
 .ai-card__actions {

@@ -155,14 +155,15 @@ CI (GitHub Actions) runs lint, typecheck and tests on Node 24, then builds the D
 
 1. **New resource:** this GitHub repository, with the **Dockerfile** build pack.
 2. **Port:** `3000`. The image has a `HEALTHCHECK` on `/api/health`.
-3. **Environment:** the variables from `.env.example`, at least `GOOGLE_GENERATIVE_AI_API_KEY`. Keep `TRUST_PROXY=1` behind Coolify's Traefik.
-4. **Check:** after deploying, 6 quick analyses from one machine must get a 429 on the 6th. If every visitor shares one limit, or nobody is ever limited, `TRUST_PROXY` doesn't match the number of proxies.
+3. **HTTPS:** give the resource an `https://` domain, so Traefik gets a Let's Encrypt certificate, and turn on HTTP → HTTPS redirection. Over plain HTTP the page stays **blank**: helmet's default CSP (`upgrade-insecure-requests`) makes the browser fetch the JS and CSS over HTTPS, which fails without a valid certificate. Coolify's auto-generated `sslip.io` address is plain HTTP, so don't demo on it.
+4. **Environment:** the variables from `.env.example`, at least `GOOGLE_GENERATIVE_AI_API_KEY`. Keep `TRUST_PROXY=1` behind Coolify's Traefik.
+5. **Check:** after deploying, 6 quick analyses from one machine must get a 429 on the 6th. If every visitor shares one limit, or nobody is ever limited, `TRUST_PROXY` doesn't match the number of proxies.
 
 The image is multi-stage (`node:24-alpine`). The runtime stage holds only the server's production dependencies and the built client (about 200 MB), runs as the `node` user, and shuts down gracefully on `SIGTERM`.
 
 ## Data usage
 
-The demo uses the Gemini API **free tier**. On that tier, Google may use the prompts (the email text) to improve its products. Don't paste confidential emails into the demo. A paid tier, or another provider, removes this caveat.
+The demo uses the Gemini API **free tier**. On that tier, Google may use the prompts (the email text) to improve its products. Don't paste confidential emails into the demo. The AI card says the same to visitors, under the Analyze button. A paid tier, or another provider, removes this caveat.
 
 ## Key decisions
 

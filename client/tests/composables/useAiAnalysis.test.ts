@@ -90,6 +90,21 @@ describe('useAiAnalysis', () => {
     expect(analysis.error.value).toBeNull()
   })
 
+  it('marks a result stale when the text was edited while it was being analyzed (review focus #5)', async () => {
+    const pending = controllableFetch()
+    const { text, analysis } = setup('Text as sent')
+
+    const done = analysis.analyze()
+    text.value = 'Text edited while waiting'
+    pending[0]?.respond(json(result('for the sent text')))
+    await done
+
+    expect(analysis.result.value?.summary).toBe('for the sent text')
+    expect(analysis.isStale.value).toBe(true)
+    text.value = 'Text as sent'
+    expect(analysis.isStale.value).toBe(false)
+  })
+
   it('marks the result stale when the text changes, and fresh again when it changes back', async () => {
     const pending = controllableFetch()
     const { text, analysis } = setup('Hello')
