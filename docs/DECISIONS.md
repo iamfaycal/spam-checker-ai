@@ -134,7 +134,10 @@ New entries are added during the build (see "Working agreement" in the plan). St
 
 - **Decision:** ~770 rules plus the original scoring formula, generated from the live script, with credit in the file header.
 - **Alternatives:** a hand-made list (behaves differently from the tool we're duplicating).
-- **Consequences:** the client confirmed reuse (2026-11-16). Swapping the list later wouldn't touch the engine.
+- **Consequences:**
+  - The client confirmed reuse (2026-11-16). Swapping the list later wouldn't touch the engine.
+  - 769 rules were extracted by a one-off script that read the original file as text (nothing executed). Every pattern compiled, with no duplicates.
+  - Patterns are kept verbatim, including redundant escapes like `[\$\.\,]`, so the file can be checked against the source. ESLint's `no-useless-escape` is disabled for that file only.
 
 ## D17 — Highlighting without jQuery — accepted
 
@@ -201,3 +204,15 @@ New entries are added during the build (see "Working agreement" in the plan). St
 - **Consequences:**
   - A retryable provider error (5xx, 429) is retried once after about 2 s.
   - For a quota 429, that retry is spent for nothing: one extra Google request, and about 2 s more before the visitor sees `503`.
+
+## D23 — Spam engine: where we differ from the original tool — accepted
+
+- **Context:** the port must look and score like the original (spec: visual duplicate), but the original has quirks.
+- **Decision:**
+  - **Overlaps:** one hit per span, the longest match. The original keeps nested matches, so "Dear friend" counts as both "Dear [email/friend/somebody]" and "Friend".
+  - **Word count:** whitespace-separated words of the trimmed text. The original's `split(/\s+/).length - 1` is off by one unless the text starts with whitespace. Its own sample only shows 57 because its editor text starts with a newline.
+  - **Kept as in the original:** the score formula (hits + 20 if money or shady + 10 if urgency or overpromise; Poor > 20, Okay > 5), and the read time `round(words / 200)`, shown as "a few seconds" or "N min".
+- **Alternatives:** a bug-for-bug copy, with nested highlights and a word count that depends on leading whitespace; or the plan's own read-time rule ("a few seconds" under 60 words, "~N min"), which wouldn't match the screenshot.
+- **Consequences:**
+  - Highlights never nest, so the editor overlay (Task 9) stays simple.
+  - On text with nested matches, our hit count is a little lower than the original's. The label can differ only near a threshold. On the sample it doesn't: 8 hits, score 38, Poor (the original gets 9).
