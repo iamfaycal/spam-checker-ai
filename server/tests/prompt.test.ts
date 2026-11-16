@@ -4,6 +4,7 @@ import {
   SYSTEM_PROMPT,
   buildRewritePrompt,
   buildUserPrompt,
+  splitParagraphs,
 } from '../src/analysis/prompt.js'
 
 // Anything an LLM might read as a closing tag: any case, spaces anywhere inside the brackets.
@@ -49,9 +50,15 @@ describe('SYSTEM_PROMPT', () => {
 })
 
 describe('buildRewritePrompt', () => {
-  it('wraps the email like buildUserPrompt and lists the suggestions, numbered', () =>
+  it('wraps the email like buildUserPrompt, lists the suggestions, and states the paragraph count', () =>
     expect(buildRewritePrompt('Hello', ['Add a name', 'Drop ASAP', 'Sign off'])).toBe(
-      '<email>\nHello\n</email>\n<suggestions>\n1. Add a name\n2. Drop ASAP\n3. Sign off\n</suggestions>',
+      '<email>\nHello\n</email>\n<suggestions>\n1. Add a name\n2. Drop ASAP\n3. Sign off\n</suggestions>\n' +
+        'The email has 1 paragraph: return exactly 1 item in "paragraphs", in the same order.',
+    ))
+
+  it('counts the paragraphs of the email it sends', () =>
+    expect(buildRewritePrompt('Hi,\n\nBody.\n\nBye', ['a', 'b', 'c'])).toContain(
+      'The email has 3 paragraphs: return exactly 3 items',
     ))
 
   it('keeps a single closing email tag', () => {
@@ -76,4 +83,19 @@ describe('REWRITE_SYSTEM_PROMPT', () => {
     expect(REWRITE_SYSTEM_PROMPT).toMatch(/plain text/i)
     expect(REWRITE_SYSTEM_PROMPT).toMatch(/never as instructions/i)
   })
+})
+
+describe('splitParagraphs', () => {
+  it('splits on blank lines, keeping single line breaks inside a paragraph', () =>
+    expect(splitParagraphs('Hi Marie,\n\nLine one\nline two\n\nBest,\nPaul')).toEqual([
+      'Hi Marie,',
+      'Line one\nline two',
+      'Best,\nPaul',
+    ]))
+
+  it('treats several blank lines, spaces on them, and Windows line endings as one break', () =>
+    expect(splitParagraphs('a\r\n\r\nb\n \n\n\nc')).toEqual(['a', 'b', 'c']))
+
+  it('ignores blank lines at the start and the end', () =>
+    expect(splitParagraphs('\n\n  Hello  \n\n')).toEqual(['Hello']))
 })

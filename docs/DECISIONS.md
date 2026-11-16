@@ -228,6 +228,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - The SDK's own `timeout` option, which can't tell "too slow" from "visitor left".
   - Mapping a caller abort to `provider`, which would log a failure that never happened.
 - **Consequences:**
+  - The retry waits **1 s** first (`retryDelayMs`), giving an overloaded model a moment to recover. The wait is abortable: the timeout or the visitor leaving ends it at once. Tests check both the pause and that a timeout during it isn't delayed.
   - The SDK's `maxRetries` can't exclude a status code, so the retry lives in the analyzer. It's tested: a 429 makes 1 call, a 503 makes 2, and a 503 followed by a success resolves.
   - A 5xx retry can make one global-cap slot cost two upstream requests. The caps (12/min, 400/day) leave headroom under Google's 15/500 for it.
 
@@ -253,3 +254,19 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - `errorMessage` is an exhaustive `switch`, so adding a code without copy fails the type check. It names the action that failed ("couldn't analyze" or "couldn't rewrite"). The rate-limit copy says "Too many AI requests", because analyze and rewrite share one budget. Codes the plan didn't list map to: `PAYLOAD_TOO_LARGE` → the input message; `NOT_FOUND` and `INTERNAL` → "Something went wrong. Try again."; `RATE_LIMITED` with no `Retry-After` → "try again shortly".
 - **Alternatives:** showing the server's `message` field (couples the UI to server wording, D11); mapping unknown bodies by HTTP status (guesses about responses we don't control).
 - **Consequences:** the client bundles zod, the cost of validating responses with the same schema as the server (D1). Measured: JS goes from 36.5 to 61.2 kB gzipped. `zod/mini` would cut that if it ever matters. Vite aliases `@spam-checker/shared` to its source, so the client never needs a prior build.
+
+## D25 — Rewrite keeps the email's paragraphs by schema, not by request — accepted
+
+- **Context:** asked in the prompt to "keep the paragraph breaks", Gemini still sometimes returned the whole rewrite as one paragraph. A live rewrite of the 4-paragraph sample came back as a single block.
+- **Decision:**
+  - The server splits the original into paragraphs (blocks separated by blank lines) and asks the model for `{ paragraphs: string[] }` with **exactly that many items**. The count is in the JSON schema the model must follow (`minItems` = `maxItems`) and stated in the prompt.
+  - The server joins the items with blank lines. The API contract doesn't change: the client still receives `{ rewrittenText }`, at most 5,000 characters.
+  - A rewrite with the wrong number of paragraphs, or an empty one, is `bad_output` (502, "The AI couldn't rewrite this email. Try again.").
+- **Alternatives:**
+  - A stronger instruction in the prompt: it can still be ignored, and nothing would catch it.
+  - Detecting merged paragraphs and re-splitting them on the server: guesswork about where the breaks belong.
+- **Consequences:**
+  - The structure is enforced, and checked twice (by the SDK and by our schema guard), like the analysis.
+  - Single line breaks inside a paragraph (for example a signature, "Best,\nPaul") stay inside its item.
+  - Checked live: 3 rewrites of the 4-paragraph sample, all with 4 paragraphs.
+  - A model that can't keep the structure costs the visitor a retry instead of silently merging their text.
