@@ -19,6 +19,15 @@
   --score-okay: #2563eb;
   --score-great: #16a34a;
 
+  --ai: #4f46e5; /* indigo-600 */
+  --ai-hover: #4338ca;
+  --risk-high: #b91c1c;
+  --risk-high-bg: #fee2e2;
+  --risk-medium: #c2410c;
+  --risk-medium-bg: #ffedd5;
+  --risk-low: #15803d;
+  --risk-low-bg: #dcfce7;
+
   --radius: 0.75rem;
   --shadow: 0 10px 30px rgb(15 23 42 / 6%);
 }

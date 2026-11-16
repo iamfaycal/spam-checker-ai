@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../../src/App.vue'
 import CategoryList from '../../src/components/CategoryList.vue'
 import ScorePanel from '../../src/components/ScorePanel.vue'
@@ -65,4 +65,32 @@ describe('App', () => {
     expect(wrapper.findAll('.editor__backdrop mark')).toHaveLength(0)
     expect(wrapper.findAll('li.category')).toHaveLength(0)
   })
+
+  it('analyzes the text with AI when the button is clicked, then shows the result', async () => {
+    const analysis = {
+      summary: 'Likely spam: money promises.',
+      riskLevel: 'high',
+      suggestions: ['One', 'Two', 'Three'],
+    }
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(analysis), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(App)
+
+    const analyze = wrapper.findAll('button').find((b) => b.text().includes('Analyze with AI'))
+    await analyze?.trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Likely spam: money promises.')
+    expect(wrapper.get('.risk').text()).toBe('High risk')
+  })
+
+  it('disables Analyze when the editor is empty', async () => {
+    const wrapper = mount(App)
+    await wrapper.get('textarea').setValue('   ')
+    const analyze = wrapper.findAll('button').find((b) => b.text().includes('Analyze with AI'))
+    expect(analyze?.attributes('disabled')).toBeDefined()
+  })
 })
+
+afterEach(() => vi.unstubAllGlobals())

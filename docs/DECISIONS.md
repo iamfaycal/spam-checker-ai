@@ -113,7 +113,10 @@ New entries are added during the build (see "Working agreement" in the plan). St
 
 - **Decision:** an "Analyze with AI" button. Editing after a result marks it outdated, and a new click aborts any in-flight request.
 - **Alternatives:** debounced auto-analysis (feels magic, but with 15 RPM the quota is gone in minutes).
-- **Consequences:** one call per intention. A late response can never overwrite a newer one.
+- **Consequences:**
+  - One call per intention. A late response can never overwrite a newer one.
+  - The button is disabled, with the reason shown, when the text is empty or over 5,000 characters, the same limits the server enforces.
+  - After a `429`, the card counts down `Retry-After` and keeps "Try again" disabled until it reaches 0, since an earlier click would only get another 429.
 
 ## D13 — Answer in the email's language — accepted
 
@@ -230,4 +233,4 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - A request the client aborted on purpose stays an `AbortError`. `useAiAnalysis` drops any outcome, answer or error, of a request that a newer one replaced (D12).
   - `errorMessage` is an exhaustive `switch`, so adding a code without copy fails the type check. Codes the plan didn't list map to: `PAYLOAD_TOO_LARGE` → the input message; `NOT_FOUND` and `INTERNAL` → "Something went wrong. Try again."; `RATE_LIMITED` with no `Retry-After` → "try again shortly".
 - **Alternatives:** showing the server's `message` field (couples the UI to server wording, D11); mapping unknown bodies by HTTP status (guesses about responses we don't control).
-- **Consequences:** the client bundles zod, the cost of validating responses with the same schema as the server (D1). Vite aliases `@spam-checker/shared` to its source, so the client never needs a prior build.
+- **Consequences:** the client bundles zod, the cost of validating responses with the same schema as the server (D1). Measured: JS goes from 36.5 to 61.2 kB gzipped. `zod/mini` would cut that if it ever matters. Vite aliases `@spam-checker/shared` to its source, so the client never needs a prior build.
