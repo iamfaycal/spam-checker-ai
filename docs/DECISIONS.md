@@ -143,7 +143,11 @@ New entries are added during the build (see "Working agreement" in the plan). St
 
 - **Decision:** a transparent textarea over a backdrop div with identical metrics, scroll synced. All user text is HTML-escaped before the `<mark>` tags are added.
 - **Alternatives:** `contenteditable` (caret and paste bugs); keeping the jQuery plugin (mixes two UI models in a Vue app).
-- **Consequences:** XSS is covered by a test with `<img onerror>`.
+- **Consequences:**
+  - XSS is covered by a test with `<img onerror>`, on the pure function and on the mounted component.
+  - Both layers use `scrollbar-gutter: stable`, so their text width is the same whether or not a scrollbar shows. The original instead shifts its overlay 99px off-screen.
+  - A trailing newline gets one extra `\n` in the overlay, the same trick as highlight-within-textarea.
+  - Checked in a real browser (Playwright, 1280px and 375px): textarea and overlay have the same scroll height and text width, scroll stays in sync, and the page never scrolls sideways.
 
 ## D18 — One Docker image, Express serves the client — accepted
 

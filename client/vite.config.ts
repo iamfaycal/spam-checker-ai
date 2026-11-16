@@ -10,5 +10,6 @@ export default defineConfig({
   },
   test: {
     include: ['tests/**/*.test.ts'],
+    environment: 'jsdom', // components need a DOM; pure lib tests run fine in it too
   },
 })

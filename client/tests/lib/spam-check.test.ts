@@ -8,15 +8,9 @@ import {
   type SpamHit,
   type SpamRule,
 } from '../../src/lib/spam-check'
+import { SAMPLE_EMAIL } from '../../src/lib/sample-email'
 
-// The default text of the original tool (and of the reference screenshot).
-const SAMPLE = `Dear friend,
-
-I am a Financial Consultant in control of privately owned funds placed for long term investments.
-
-My client intends to invest these funds in projects. I am willing to finance projects at a guaranteed 5% ROI per annum for projects ranging from 2 years term and above but not exceeding 12 years.
-
-Please answer ASAP.`
+const SAMPLE = SAMPLE_EMAIL
 
 const hit = (category: SpamHit['category'], keyword = 'x'): SpamHit => ({
   start: 0,
