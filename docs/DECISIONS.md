@@ -165,7 +165,11 @@ New entries are added during the build (see "Working agreement" in the plan). St
 
 - **Decision:** a multi-stage `node:24-alpine` image. In production, Express serves `client/dist` and the API on one origin.
 - **Alternatives:** two services (an nginx frontend and an API); needs CORS and two deploys.
-- **Consequences:** no CORS, one Coolify resource, healthcheck on `/api/health`.
+- **Consequences:**
+  - No CORS, one Coolify resource, healthcheck on `/api/health`.
+  - Three stages: build (all deps), deps (`npm ci --omit=dev` for server and shared only), and runtime (those deps + `shared/dist`, `server/dist`, `client/dist`). The image runs as `node`, with exec-form `CMD` so node receives `SIGTERM`. Checked: healthy, page + assets + SPA fallback, a live analysis, no CSP errors in a browser, and a clean stop in under 1 s.
+  - The client's packages (`vue`, `zod`, `shared`) are **devDependencies**: Vite bundles them into static files at build time. As runtime deps, Vue's optional TypeScript peer leaked into the production install (TypeScript is about 23 MB). Moving them took the image from 227 to 198 MB.
+  - CI builds the image and smoke-tests it (healthy, `/api/health`, the page) after the test job.
 
 ## D19 — Git workflow: feature branches + PRs, CI from day one — accepted
 
