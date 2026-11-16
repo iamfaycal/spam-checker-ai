@@ -93,6 +93,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   | ------------------------------------------ | ------ | --------------------------------------- |
   | Invalid input                              | 400    | `INVALID_INPUT`                         |
   | Body too large                             | 413    | `PAYLOAD_TOO_LARGE`                     |
+  | Unknown `/api` route                       | 404    | `NOT_FOUND`                             |
   | Per-IP limit                               | 429    | `RATE_LIMITED`                          |
   | Global caps                                | 503    | `LLM_UNAVAILABLE` / `DAILY_CAP_REACHED` |
   | LLM timeout                                | 504    | `LLM_TIMEOUT`                           |

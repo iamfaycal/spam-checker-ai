@@ -4,7 +4,7 @@ import helmet from 'helmet'
 import type { Analyzer } from './analysis/analyzer.js'
 import type { Config } from './config.js'
 import { analyzeRoute } from './http/analyze-route.js'
-import { errorHandler } from './http/error-handler.js'
+import { errorHandler, sendError } from './http/error-handler.js'
 
 export interface AppDeps {
   analyzer: Analyzer
@@ -26,14 +26,16 @@ export function createApp(deps: AppDeps): Express {
   const api = express.Router()
   api.use(express.json({ limit: '20kb' }))
   api.post('/analyze', analyzeRoute(deps.analyzer))
+  // Anything else under /api: same error shape as every other API error (D11).
+  api.use((_req, res) => sendError(res, 404, 'NOT_FOUND', 'No such API route.'))
   app.use('/api', api)
 
   if (deps.staticDir) {
     const root = resolve(deps.staticDir)
     app.use(express.static(root))
-    // SPA fallback: any other GET outside /api gets the client's index.html.
+    // SPA fallback: any other GET gets the client's index.html (/api never gets here).
     app.use((req, res, next) => {
-      if (req.method !== 'GET' || /^\/api(\/|$)/.test(req.path)) return next()
+      if (req.method !== 'GET') return next()
       res.sendFile(resolve(root, 'index.html'))
     })
   }

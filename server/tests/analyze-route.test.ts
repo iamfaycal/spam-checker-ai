@@ -145,6 +145,19 @@ describe('GET /api/health', () => {
   })
 })
 
+describe('unknown /api routes', () => {
+  it.each([
+    ['GET', '/api/nope'],
+    ['POST', '/api/nope'],
+    ['GET', '/api/analyze'],
+  ] as const)('%s %s answers 404 NOT_FOUND in the standard error shape', async (method, path) => {
+    const app = appWith(fakeAnalyzer().analyzer)
+    const res = await (method === 'GET' ? request(app).get(path) : request(app).post(path))
+    expect(res.status).toBe(404)
+    expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: expect.any(String) } })
+  })
+})
+
 describe('static client (production)', () => {
   let dir: string
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
@@ -171,6 +184,7 @@ describe('static client (production)', () => {
   it('does not answer unknown /api routes with index.html', async () => {
     const res = await request(appServing()).get('/api/nope')
     expect(res.status).toBe(404)
+    expect(res.body.error.code).toBe('NOT_FOUND')
     expect(res.text).not.toContain('Spam Checker')
   })
 })

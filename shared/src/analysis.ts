@@ -45,6 +45,7 @@ export type RiskLevel = z.infer<typeof RiskLevelSchema>
 /** Stable error codes (D11): the UI picks its message from the code, never from the text. */
 export const ERROR_CODES = [
   'INVALID_INPUT',
+  'NOT_FOUND',
   'PAYLOAD_TOO_LARGE',
   'RATE_LIMITED',
   'DAILY_CAP_REACHED',
