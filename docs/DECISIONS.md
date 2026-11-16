@@ -75,7 +75,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
 
 - **Context:** the email is untrusted text sent to an LLM.
 - **Decision:**
-  - The text is wrapped in `<email>…</email>`, and any closing tag inside it is neutralised.
+  - The text is wrapped in `<email>…</email>`. Any closing tag inside it, in any case or spacing (`</EMAIL>`, `< /email >`), is escaped to `&lt;/email&gt;`, which is no longer tag-shaped. (`</ email>`, the first idea, still looks like a tag to a lenient model.)
   - The system prompt says the content is data, never instructions.
   - The output is validated by schema.
   - Output is rendered as text, never HTML.
