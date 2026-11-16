@@ -185,7 +185,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - **Timeout:** our own `AbortSignal.timeout(LLM_TIMEOUT_MS)`, combined with the caller's signal through `AbortSignal.any`. If our timeout signal fired, the kind is `timeout`, whatever error the SDK raised.
   - **Bad output:** the SDK's `NoObjectGeneratedError`, `TypeValidationError` and `JSONParseError`. Then `AnalysisResultSchema` parses the result again as a final guard.
   - **Provider:** everything else, including the provider's own 429. That 429 means the shared quota ran out, not that this visitor sent too much.
-  - **Caller abort:** re-thrown unchanged, not wrapped. Nobody is listening for the answer, so there is nothing to report.
+  - **Caller abort:** re-thrown unchanged, not wrapped. Nobody is listening for the answer, so there is nothing to report. The route aborts its signal when the connection closes before the answer is sent, which also stops a paid LLM call, and then sends nothing.
   - `temperature: 0.3` and `maxRetries: 1`.
 - **Alternatives:**
   - The SDK's own `timeout` option, which can't tell "too slow" from "visitor left".
