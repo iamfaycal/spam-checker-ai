@@ -1,0 +1,13 @@
+# Keep the build context small and secrets out of the image.
+**/node_modules
+**/dist
+**/coverage
+.env
+.env.*
+!.env.example
+.git
+.github
+.superpowers
+.playwright-mcp
+docs
+*.md

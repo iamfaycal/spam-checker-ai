@@ -20,3 +20,23 @@ jobs:
       - run: npm run build -w shared
       - run: npm run typecheck
       - run: npm test
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t spam-checker-ai .
+      # Smoke test the image itself: no API key needed for health and the static client.
+      - name: Run the image and check health and the page
+        run: |
+          docker run -d --name app -p 3000:3000 spam-checker-ai
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' app)" = healthy ] && break
+            sleep 2
+          done
+          docker inspect -f '{{.State.Health.Status}}' app | grep -q healthy
+          curl -fsS localhost:3000/api/health
+          curl -fsS localhost:3000/ | grep -q '<title>Spam Checker</title>'
+      - if: failure()
+        run: docker logs app
