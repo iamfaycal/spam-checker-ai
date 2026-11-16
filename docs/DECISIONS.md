@@ -194,6 +194,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - **Provider:** everything else, including the provider's own 429. That 429 means the shared quota ran out, not that this visitor sent too much.
   - **Caller abort:** re-thrown unchanged, not wrapped. Nobody is listening for the answer, so there is nothing to report. The route aborts its signal when the connection closes before the answer is sent, which also stops a paid LLM call, and then sends nothing.
   - `temperature: 0.3` and `maxRetries: 1`.
+  - The error handler logs the kind and the underlying cause of every `AnalyzerError` on the server (for example a missing API key), and sends the visitor only the generic code and message.
 - **Alternatives:**
   - The SDK's own `timeout` option, which can't tell "too slow" from "visitor left".
   - Mapping a caller abort to `provider`, which would log a failure that never happened.

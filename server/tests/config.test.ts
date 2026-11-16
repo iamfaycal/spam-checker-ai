@@ -23,6 +23,11 @@ describe('loadConfig', () => {
     expect(config.rateLimit.globalDailyCap).toBe(100)
   })
 
+  it('reads STATIC_DIR when set, and leaves it undefined otherwise', () => {
+    expect(loadConfig({ STATIC_DIR: '/app/client/dist' }).staticDir).toBe('/app/client/dist')
+    expect(loadConfig({}).staticDir).toBeUndefined()
+  })
+
   it('accepts TRUST_PROXY=0 (no proxy in front, e.g. local dev)', () =>
     expect(loadConfig({ TRUST_PROXY: '0' }).trustProxy).toBe(0))
 

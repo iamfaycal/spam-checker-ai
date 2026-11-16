@@ -76,6 +76,7 @@ describe('POST /api/analyze', () => {
     ['timeout', 504, 'LLM_TIMEOUT'],
     ['provider', 503, 'LLM_UNAVAILABLE'],
   ] as const)('maps AnalyzerError %s to %i %s', async (kind: AnalyzerErrorKind, status, code) => {
+    jest.spyOn(console, 'error').mockImplementation(() => {})
     const { analyzer } = fakeAnalyzer(async () => {
       throw new AnalyzerError(kind)
     })
@@ -83,6 +84,21 @@ describe('POST /api/analyze', () => {
 
     expect(res.status).toBe(status)
     expect(res.body).toEqual({ error: { code, message: expect.any(String) } })
+    jest.restoreAllMocks()
+  })
+
+  it('logs the cause of an LLM failure server-side, but never sends it to the client', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const cause = new Error('API key missing: GOOGLE_GENERATIVE_AI_API_KEY')
+    const { analyzer } = fakeAnalyzer(async () => {
+      throw new AnalyzerError('provider', { cause })
+    })
+    const res = await request(appWith(analyzer)).post('/api/analyze').send({ text: 'Hi' })
+
+    expect(res.status).toBe(503)
+    expect(res.text).not.toContain('API key')
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('provider'), cause)
+    log.mockRestore()
   })
 
   it('hides unexpected errors behind 500 INTERNAL, and logs them server-side', async () => {

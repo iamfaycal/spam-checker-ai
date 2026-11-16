@@ -18,12 +18,15 @@ const EnvSchema = z.object({
   RATE_LIMIT_PER_DAY: count(20),
   GLOBAL_PER_MINUTE: count(12),
   GLOBAL_DAILY_CAP: count(400),
+  // Built client to serve in production (set in the Docker image); unset in dev.
+  STATIC_DIR: z.string().min(1).optional(),
 })
 
 export type LlmProvider = z.infer<typeof EnvSchema>['LLM_PROVIDER']
 
 export interface Config {
   port: number
+  staticDir?: string
   trustProxy: number
   llm: { provider: LlmProvider; model: string; timeoutMs: number }
   rateLimit: { perMinute: number; perDay: number; globalPerMinute: number; globalDailyCap: number }
@@ -43,6 +46,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   const e = parsed.data
   return {
     port: e.PORT,
+    staticDir: e.STATIC_DIR,
     trustProxy: e.TRUST_PROXY,
     llm: { provider: e.LLM_PROVIDER, model: e.LLM_MODEL, timeoutMs: e.LLM_TIMEOUT_MS },
     rateLimit: {

@@ -27,6 +27,8 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   if (res.headersSent) return next(err)
 
   if (err instanceof AnalyzerError) {
+    // The cause (missing API key, quota, bad JSON...) is for the operator, not the visitor.
+    console.error(`LLM call failed (${err.kind})`, err.cause)
     const [status, code, message] = ANALYZER_ERRORS[err.kind]
     return sendError(res, status, code, message)
   }
