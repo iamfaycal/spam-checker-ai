@@ -85,6 +85,25 @@ describe('per-IP limits', () => {
 })
 
 describe('global caps (shared LLM quota)', () => {
+  it('ignores requests that never reach the LLM (invalid JSON, too large, wrong text)', async () => {
+    const { app, analyze } = appWith({ globalPerMinute: 2, globalDailyCap: 2 })
+    const junk = [
+      (r: request.Test) => r.set('content-type', 'application/json').send('{"text": '),
+      (r: request.Test) => r.send({ text: 'a'.repeat(25 * 1024) }),
+      (r: request.Test) => r.send({ text: '   ' }),
+      (r: request.Test) => r.send({}),
+    ]
+    for (const [i, send] of junk.entries()) {
+      const res = await send(request(app).post('/api/analyze').set('X-Forwarded-For', `9.9.9.${i}`))
+      expect([400, 413]).toContain(res.status)
+    }
+
+    // The whole global budget (2) is still available for real analyses.
+    await analyzeFrom(app, '1.1.1.1').expect(200)
+    await analyzeFrom(app, '2.2.2.2').expect(200)
+    expect(analyze).toHaveBeenCalledTimes(2)
+  })
+
   it('answers past the daily cap with 503 DAILY_CAP_REACHED, whatever the IP', async () => {
     const { app, analyze } = appWith()
     for (const ip of ['1.1.1.1', '2.2.2.2', '3.3.3.3', '4.4.4.4']) {

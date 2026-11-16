@@ -52,14 +52,19 @@ function global(windowMs: number, limit: number, code: ErrorCode, message: strin
 }
 
 /**
- * The four limiters, in order: per-IP minute, per-IP day, global minute, global day.
- * Mount them before body parsing, so rejected requests count too (D8).
+ * Two groups, mounted at different points of the request (D8):
+ * - `perIp` before body parsing: every request counts, junk included, so probing isn't free.
+ * - `global` after validation: only requests that will reach the LLM spend the shared budget.
  */
-export function createRateLimiters(cfg: Config['rateLimit']): RequestHandler[] {
-  return [
-    perIp(MINUTE, cfg.perMinute),
-    perIp(DAY, cfg.perDay),
-    global(MINUTE, cfg.globalPerMinute, 'LLM_UNAVAILABLE', 'The AI is busy. Try again shortly.'),
-    global(DAY, cfg.globalDailyCap, 'DAILY_CAP_REACHED', "Today's AI quota is used up."),
-  ]
+export function createRateLimiters(cfg: Config['rateLimit']): {
+  perIp: RequestHandler[]
+  global: RequestHandler[]
+} {
+  return {
+    perIp: [perIp(MINUTE, cfg.perMinute), perIp(DAY, cfg.perDay)],
+    global: [
+      global(MINUTE, cfg.globalPerMinute, 'LLM_UNAVAILABLE', 'The AI is busy. Try again shortly.'),
+      global(DAY, cfg.globalDailyCap, 'DAILY_CAP_REACHED', "Today's AI quota is used up."),
+    ],
+  }
 }

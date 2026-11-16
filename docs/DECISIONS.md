@@ -71,8 +71,9 @@ New entries are added during the build (see "Working agreement" in the plan). St
 - **Alternatives:** `skipFailedRequests` (friendlier to typos).
 - **Consequences:**
   - A user who sends an empty text spends one request. That's acceptable, and the UI also disables the button on empty text.
-  - The limiters are mounted on `/api/analyze` before `express.json()`, so an oversized (413) or malformed (400) body also counts.
-  - Rejected requests also count toward the global caps, although they never reach Google. An attacker could drain the global budget with invalid requests, but each IP still stops at 5/min and 20/day, and valid requests would drain it just as fast.
+  - The per-IP limiters are mounted on `/api/analyze` before `express.json()`, so an oversized (413) or malformed (400) body also counts against that IP.
+  - The global caps are mounted after validation (`validateBody`), so only requests that reach the LLM count. Junk can't drain the shared quota, and requests that reach the LLM and fail (timeout, provider error) still count, because they did spend quota.
+  - The library's `skipFailedRequests` was rejected: it would also refund 502/503/504 answers, which did spend quota.
 
 ## D9 — Input limits — accepted
 
