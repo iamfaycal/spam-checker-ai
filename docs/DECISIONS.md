@@ -141,7 +141,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
 ## D19 — Git workflow: feature branches + PRs, CI from day one — accepted
 
 - **Decision:**
-  - `main` is protected and requires green CI.
+  - `main` only changes through a PR with green CI. This is a convention, not a GitHub rule: branch protection isn't available on a private repo on a free account, and the repo stays private.
   - There are 6 PRs, one per vertical slice (see the plan), each with a template-free description: what, why, how tested, and decisions added.
   - Inside a PR, one commit per task. Merge with a merge commit so task commits stay visible.
 - **Alternatives:** committing straight to `main` (no visible review trail); one PR per task (13 PRs is noise for a solo test).

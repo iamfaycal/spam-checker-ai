@@ -40,7 +40,7 @@ The owner must be able to defend every line in a technical interview. So:
 
 2. **Decision log.** Every non-obvious choice goes into `docs/DECISIONS.md` (Context → Decision → Alternatives → Consequences), with status `proposed`. The owner flips it to `accepted` at the checkpoint. If a choice changes an existing entry, edit that entry; don't add a contradicting one. The `DECISIONS.md` update is part of the task's commit.
 3. **Nothing unexplained.** If the owner can't follow a piece of code at the checkpoint, simplify it before moving on.
-4. **Branches and PRs** (D19). `main` is protected (CI required). Work happens on one branch per slice, one commit per task, and one PR per slice. Merge with a merge commit.
+4. **Branches and PRs** (D19). `main` changes only through PRs with green CI (by convention: no branch protection on a free private repo). Work happens on one branch per slice, one commit per task, and one PR per slice. Merge with a merge commit.
 
    | PR  | Branch                  | Tasks |
    | --- | ----------------------- | ----- |
@@ -155,7 +155,7 @@ it('rejects unknown riskLevel', () =>
 - [ ] **Step 8 (owner confirms each part):**
   - Create the private GitHub repo and push `main` with the docs commits.
   - Push `chore/setup` and open PR 1; CI must be green.
-  - After merging, enable branch protection on `main` (require the CI check).
+  - ~~After merging, enable branch protection on `main`.~~ Not available on a free private repo; D19 enforces it by convention.
 
 ---
 
