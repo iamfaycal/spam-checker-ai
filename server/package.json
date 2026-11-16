@@ -1,0 +1,21 @@
+{
+  "name": "@spam-checker/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.5.2",
+    "@types/node": "^24.19.2",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.15"
+  },
+  "dependencies": {
+    "@spam-checker/shared": "^0.0.0",
+    "zod": "^4.6.7"
+  }
+}

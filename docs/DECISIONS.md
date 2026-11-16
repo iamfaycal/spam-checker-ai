@@ -157,4 +157,19 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - Prettier formats the whole repo (docs included), and `npm run lint` checks both ESLint and Prettier.
   - Workspaces are listed as they are created; root scripts use `--workspaces --if-present`, so a new package is covered by CI just by joining the list.
 - **Alternatives:** TypeScript 7 (faster compiler, but breaks the Jest and ESLint toolchain today); CommonJS (simpler for Jest, but the AI SDK and Vite ecosystem are ESM-first).
-- **Consequences:** Jest has to run TypeScript as ESM. This is checked in Task 2, with a fallback if it fights back. Moving to TS 7 later is a version bump once `ts-jest` and `typescript-eslint` support it.
+- **Consequences:**
+  - `ai` and `@ai-sdk/*` are ESM-only, so the server's Jest runs in ESM mode: `ts-jest` with `useESM`, Node's `--experimental-vm-modules` flag, and imports from `@jest/globals` instead of global `jest`.
+  - Checked in Task 2: Jest loads `ai` and its test mocks (`MockLanguageModelV4`).
+  - Moving to TS 7 later is a version bump once `ts-jest` and `typescript-eslint` support it.
+
+## D21 — Env config: fail fast, report every error at once — accepted
+
+- **Context:** a wrong variable on Coolify should stop the container at boot, not surface on the first visitor's request.
+- **Decision:**
+  - A zod schema whose keys are the env variable names. Each validation error therefore names the variable to fix, and every invalid variable is listed in one error.
+  - Numbers must be positive integers. `TRUST_PROXY` also accepts `0` (no proxy in front, as in local dev).
+  - API keys are not validated here, because each provider SDK reads its own variable.
+- **Alternatives:** reading `process.env` where it's used (failures surface late, defaults scattered); a config library (overkill for 9 variables).
+- **Consequences:**
+  - `loadConfig` takes the env as an argument, so tests never touch `process.env`.
+  - A variable set to an empty string (`PORT=`) is an error, not the default. Leave it unset to use the default.
