@@ -17,7 +17,10 @@ New entries are added during the build (see "Working agreement" in the plan). St
 - **Context:** brief asks for structured data and a provider-agnostic design.
 - **Decision:** `ai` + `@ai-sdk/google` structured output, using the D1 schema.
 - **Alternatives:** official provider SDKs behind a hand-written adapter (more code, same result); raw `fetch` to Gemini JSON mode (simplest, locked to one provider).
-- **Consequences:** changing provider = `LLM_PROVIDER` + `LLM_MODEL` env vars. The SDK ships a mock model, so the LLM layer is unit-testable without network.
+- **Consequences:**
+  - Changing provider means setting `LLM_PROVIDER`, `LLM_MODEL` and that provider's API key. `createModel` is the only file that names providers.
+  - The SDK ships a mock model (`MockLanguageModelV4`), so the LLM layer is unit-testable without network.
+  - With v7 we call `generateText` with `output: Output.object({ schema })` (`generateObject` is deprecated) and pass the system prompt as `instructions` (`system` is deprecated).
 
 ## D3 — `Analyzer` port injected into `createApp` — accepted
 
@@ -48,7 +51,9 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - Global: 12/min (503 `LLM_UNAVAILABLE`) and 400/day (503 `DAILY_CAP_REACHED`).
   - `express-rate-limit` with the in-memory store. All values come from env.
 - **Alternatives:** per-IP only (many IPs together exceed Google's RPM); Redis store (needed only with several instances); CAPTCHA (friction, overkill for a demo).
-- **Consequences:** our limits fire before Google's. The single-instance limitation is documented, and the fix is a Redis store.
+- **Consequences:**
+  - Our limits fire before Google's. The single-instance limitation is documented, and the fix is a Redis store.
+  - Only the per-IP limiters send `RateLimit` headers (draft-8). The global ones send none, because they would overwrite the visitor's own numbers with the shared counter. Every rejection carries `Retry-After`.
 
 ## D7 — `trust proxy = 1` — accepted
 
@@ -64,7 +69,11 @@ New entries are added during the build (see "Working agreement" in the plan). St
 - **Context:** a 400 costs nothing to us, but unlimited 400s allow probing and log flooding.
 - **Decision:** limiters run before validation.
 - **Alternatives:** `skipFailedRequests` (friendlier to typos).
-- **Consequences:** a user who sends an empty text spends one request. That's acceptable, and the UI also disables the button on empty text.
+- **Consequences:**
+  - A user who sends an empty text spends one request. That's acceptable, and the UI also disables the button on empty text.
+  - The per-IP limiters are mounted on `/api/analyze` before `express.json()`, so an oversized (413) or malformed (400) body also counts against that IP.
+  - The global caps are mounted after validation (`validateBody`), so only requests that reach the LLM count. Junk can't drain the shared quota, and requests that reach the LLM and fail (timeout, provider error) still count, because they did spend quota.
+  - The library's `skipFailedRequests` was rejected: it would also refund 502/503/504 answers, which did spend quota.
 
 ## D9 — Input limits — accepted
 
@@ -75,7 +84,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
 
 - **Context:** the email is untrusted text sent to an LLM.
 - **Decision:**
-  - The text is wrapped in `<email>…</email>`, and any closing tag inside it is neutralised.
+  - The text is wrapped in `<email>…</email>`. Any closing tag inside it, in any case or spacing (`</EMAIL>`, `< /email >`), is escaped to `&lt;/email&gt;`, which is no longer tag-shaped. (`</ email>`, the first idea, still looks like a tag to a lenient model.)
   - The system prompt says the content is data, never instructions.
   - The output is validated by schema.
   - Output is rendered as text, never HTML.
@@ -90,6 +99,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   | ------------------------------------------ | ------ | --------------------------------------- |
   | Invalid input                              | 400    | `INVALID_INPUT`                         |
   | Body too large                             | 413    | `PAYLOAD_TOO_LARGE`                     |
+  | Unknown `/api` route                       | 404    | `NOT_FOUND`                             |
   | Per-IP limit                               | 429    | `RATE_LIMITED`                          |
   | Global caps                                | 503    | `LLM_UNAVAILABLE` / `DAILY_CAP_REACHED` |
   | LLM timeout                                | 504    | `LLM_TIMEOUT`                           |
@@ -141,7 +151,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
 ## D19 — Git workflow: feature branches + PRs, CI from day one — accepted
 
 - **Decision:**
-  - `main` is protected and requires green CI.
+  - `main` only changes through a PR with green CI. This is a convention, not a GitHub rule: branch protection isn't available on a private repo on a free account, and the repo stays private.
   - There are 6 PRs, one per vertical slice (see the plan), each with a template-free description: what, why, how tested, and decisions added.
   - Inside a PR, one commit per task. Merge with a merge commit so task commits stay visible.
 - **Alternatives:** committing straight to `main` (no visible review trail); one PR per task (13 PRs is noise for a solo test).
@@ -157,4 +167,37 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - Prettier formats the whole repo (docs included), and `npm run lint` checks both ESLint and Prettier.
   - Workspaces are listed as they are created; root scripts use `--workspaces --if-present`, so a new package is covered by CI just by joining the list.
 - **Alternatives:** TypeScript 7 (faster compiler, but breaks the Jest and ESLint toolchain today); CommonJS (simpler for Jest, but the AI SDK and Vite ecosystem are ESM-first).
-- **Consequences:** Jest has to run TypeScript as ESM. This is checked in Task 2, with a fallback if it fights back. Moving to TS 7 later is a version bump once `ts-jest` and `typescript-eslint` support it.
+- **Consequences:**
+  - `ai` and `@ai-sdk/*` are ESM-only, so the server's Jest runs in ESM mode: `ts-jest` with `useESM`, Node's `--experimental-vm-modules` flag, and imports from `@jest/globals` instead of global `jest`.
+  - Checked in Task 2: Jest loads `ai` and its test mocks (`MockLanguageModelV4`).
+  - Moving to TS 7 later is a version bump once `ts-jest` and `typescript-eslint` support it.
+
+## D21 — Env config: fail fast, report every error at once — accepted
+
+- **Context:** a wrong variable on Coolify should stop the container at boot, not surface on the first visitor's request.
+- **Decision:**
+  - A zod schema whose keys are the env variable names. Each validation error therefore names the variable to fix, and every invalid variable is listed in one error.
+  - Numbers must be positive integers. `TRUST_PROXY` also accepts `0` (no proxy in front, as in local dev).
+  - API keys are not validated here, because each provider SDK reads its own variable.
+- **Alternatives:** reading `process.env` where it's used (failures surface late, defaults scattered); a config library (overkill for 9 variables).
+- **Consequences:**
+  - `loadConfig` takes the env as an argument, so tests never touch `process.env`.
+  - A variable set to an empty string (`PORT=`) is an error, not the default. Leave it unset to use the default.
+
+## D22 — LLM failures: three kinds, and a visitor leaving is not a failure — accepted
+
+- **Context:** the route must turn every LLM failure into the right status (D11), and a request can also stop because the visitor closed the tab.
+- **Decision:**
+  - The analyzer throws `AnalyzerError` with one of three kinds: `timeout`, `bad_output` or `provider`.
+  - **Timeout:** our own `AbortSignal.timeout(LLM_TIMEOUT_MS)`, combined with the caller's signal through `AbortSignal.any`. If our timeout signal fired, the kind is `timeout`, whatever error the SDK raised.
+  - **Bad output:** the SDK's `NoObjectGeneratedError`, `TypeValidationError` and `JSONParseError`. Then `AnalysisResultSchema` parses the result again as a final guard.
+  - **Provider:** everything else, including the provider's own 429. That 429 means the shared quota ran out, not that this visitor sent too much.
+  - **Caller abort:** re-thrown unchanged, not wrapped. Nobody is listening for the answer, so there is nothing to report. The route aborts its signal when the connection closes before the answer is sent, which also stops a paid LLM call, and then sends nothing.
+  - `temperature: 0.3` and `maxRetries: 1`.
+  - The error handler logs the kind and the underlying cause of every `AnalyzerError` on the server (for example a missing API key), and sends the visitor only the generic code and message.
+- **Alternatives:**
+  - The SDK's own `timeout` option, which can't tell "too slow" from "visitor left".
+  - Mapping a caller abort to `provider`, which would log a failure that never happened.
+- **Consequences:**
+  - A retryable provider error (5xx, 429) is retried once after about 2 s.
+  - For a quota 429, that retry is spent for nothing: one extra Google request, and about 2 s more before the visitor sees `503`.
