@@ -77,6 +77,10 @@ function syncScroll(event: Event) {
   min-height: 32rem;
   resize: vertical;
   overflow-y: auto;
+  /* No elastic bounce at the ends (macOS, iOS): the bounce moves the text without changing
+     scrollTop, so the backdrop can't follow and the words briefly leave their highlights.
+     Side effect: scrolling doesn't chain to the page while the pointer is over the editor. */
+  overscroll-behavior: none;
   background: transparent;
   color: var(--text);
   outline: none;

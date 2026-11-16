@@ -162,6 +162,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - XSS is covered by a test with `<img onerror>`, on the pure function and on the mounted component.
   - Both layers use `scrollbar-gutter: stable`, so their text width is the same whether or not a scrollbar shows. The original instead shifts its overlay 99px off-screen.
   - A trailing newline gets one extra `\n` in the overlay, the same trick as highlight-within-textarea.
+  - The textarea has `overscroll-behavior: none`. macOS and iOS elastic bounce moves the text without changing `scrollTop`, so the overlay can't follow and the words briefly leave their highlights. Side effect: while the pointer is over the editor, scrolling doesn't chain to the page once the editor reaches its end. The alternative, both layers in one scroll container with an auto-growing textarea, would keep chaining but is a bigger change.
   - Checked in a real browser (Playwright, 1280px and 375px): textarea and overlay have the same scroll height and text width, scroll stays in sync, and the page never scrolls sideways.
 
 ## D18 — One Docker image, Express serves the client — accepted
