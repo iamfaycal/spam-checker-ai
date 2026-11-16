@@ -56,7 +56,8 @@ export function createLlmAnalyzer(opts: {
    * One structured LLM call, shared by analyze and rewrite so they can't drift apart:
    * the timeout, the error classification (D22) and the final schema guard.
    */
-  async function generate<S extends z.ZodType>(
+  // `z.core.$ZodType` accepts both classic and mini schemas (the shared contract is mini: D24).
+  async function generate<S extends z.core.$ZodType>(
     schema: S,
     instructions: string,
     prompt: string,
@@ -96,7 +97,7 @@ export function createLlmAnalyzer(opts: {
     }
 
     // Final guard: never return something the contract doesn't allow, whatever the SDK did.
-    const parsed = schema.safeParse(output)
+    const parsed = z.safeParse(schema, output)
     if (!parsed.success) throw new AnalyzerError('bad_output', { cause: parsed.error })
     return parsed.data
   }

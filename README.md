@@ -132,7 +132,7 @@ npm run lint      # ESLint + Prettier
 npm run typecheck # tsc / vue-tsc
 ```
 
-There are **223 tests**: Vitest for `shared` and `client`, Jest + Supertest for `server`.
+There are **224 tests**: Vitest for `shared` and `client`, Jest + Supertest for `server`.
 
 - **Server:**
   - the LLM layer runs on the AI SDK's mock model, with no network;
@@ -181,4 +181,3 @@ Every non-obvious choice is in [`docs/DECISIONS.md`](docs/DECISIONS.md), with it
 - **A Redis store** for the rate limiters, to run more than one instance.
 - **Streaming** the analysis, so the summary appears word by word.
 - **End-to-end tests** (Playwright) in CI, against the built image.
-- **`zod/mini`** in the client, to cut about 25 kB gzipped.

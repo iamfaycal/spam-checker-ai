@@ -1,8 +1,12 @@
-import { z } from 'zod'
+import * as z from 'zod/mini'
 
 /**
  * API contract shared by the server and the client (D1).
- * The `.describe()` texts are forwarded to the LLM by the AI SDK as field-level guidance.
+ *
+ * Written with `zod/mini` because the client bundles it: the functional API tree-shakes,
+ * where classic zod ships whole (D24). Same rules, different spelling: `.check(...)`
+ * instead of chained methods. `z.describe(...)` texts reach the LLM as field-level
+ * guidance through the AI SDK's JSON Schema.
  */
 
 export const MAX_TEXT_LENGTH = 5000
@@ -10,50 +14,50 @@ export const SUGGESTION_COUNT = 3
 export const MAX_SUMMARY_LENGTH = 400
 export const MAX_SUGGESTION_LENGTH = 120
 
-export const AnalyzeRequestSchema = z.object({
-  // `.trim()` runs before the length checks, so "   " is rejected and surrounding spaces don't count.
-  text: z.string().trim().min(1).max(MAX_TEXT_LENGTH),
-})
+/** Trimmed first, so "   " is rejected and surrounding spaces don't count toward the limit. */
+const emailText = () => z.string().check(z.trim(), z.minLength(1), z.maxLength(MAX_TEXT_LENGTH))
+
+export const AnalyzeRequestSchema = z.object({ text: emailText() })
 
 export const RiskLevelSchema = z
   .enum(['low', 'medium', 'high'])
-  .describe('How likely the email is to land in the spam folder.')
+  .check(z.describe('How likely the email is to land in the spam folder.'))
 
 /** Exactly 3 short suggestions: produced by /api/analyze, sent back to /api/rewrite. */
 export const SuggestionsSchema = z
   .array(
-    z
-      .string()
-      .trim() // a suggestion of only spaces is no suggestion (they come back from the client)
-      .min(1)
-      .max(MAX_SUGGESTION_LENGTH)
-      .describe('One concrete improvement, starting with a verb, tied to the text.'),
+    z.string().check(
+      z.trim(), // a suggestion of only spaces is no suggestion (they come back from the client)
+      z.minLength(1),
+      z.maxLength(MAX_SUGGESTION_LENGTH),
+      z.describe('One concrete improvement, starting with a verb, tied to the text.'),
+    ),
   )
-  .length(SUGGESTION_COUNT)
-  .describe(`Exactly ${SUGGESTION_COUNT} actionable suggestions.`)
+  .check(
+    z.length(SUGGESTION_COUNT),
+    z.describe(`Exactly ${SUGGESTION_COUNT} actionable suggestions.`),
+  )
 
 export const AnalysisResultSchema = z.object({
   summary: z
     .string()
-    .min(1)
-    .max(MAX_SUMMARY_LENGTH)
-    .describe('1-2 sentences explaining the spam risk and its main causes.'),
+    .check(
+      z.minLength(1),
+      z.maxLength(MAX_SUMMARY_LENGTH),
+      z.describe('1-2 sentences explaining the spam risk and its main causes.'),
+    ),
   riskLevel: RiskLevelSchema,
   suggestions: SuggestionsSchema,
 })
 
 export const RewriteRequestSchema = z.object({
-  text: z.string().trim().min(1).max(MAX_TEXT_LENGTH),
+  text: emailText(),
   suggestions: SuggestionsSchema,
 })
 
 export const RewriteResultSchema = z.object({
   // Same cap as the input, so a rewritten email can always be analyzed again.
-  rewrittenText: z
-    .string()
-    .min(1)
-    .max(MAX_TEXT_LENGTH)
-    .describe('The full rewritten email body, plain text, paragraphs preserved.'),
+  rewrittenText: z.string().check(z.minLength(1), z.maxLength(MAX_TEXT_LENGTH)),
 })
 
 export type AnalyzeRequest = z.infer<typeof AnalyzeRequestSchema>

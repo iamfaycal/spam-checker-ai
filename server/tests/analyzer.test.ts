@@ -73,6 +73,31 @@ describe('createLlmAnalyzer', () => {
     await expect(analyzerFor(model).analyze('x')).resolves.toEqual(VALID)
   })
 
+  it('sends the model the contract as JSON Schema: constraints and field descriptions', async () => {
+    const model = modelReplying(JSON.stringify(VALID))
+    await analyzerFor(model).analyze('x')
+    expect(model.doGenerateCalls[0]?.responseFormat).toMatchObject({
+      type: 'json',
+      schema: {
+        required: ['summary', 'riskLevel', 'suggestions'],
+        properties: {
+          summary: {
+            type: 'string',
+            maxLength: 400,
+            description: expect.stringMatching(/sentences/),
+          },
+          riskLevel: { enum: ['low', 'medium', 'high'], description: expect.any(String) },
+          suggestions: {
+            minItems: 3,
+            maxItems: 3,
+            description: expect.stringMatching(/Exactly 3/),
+            items: { type: 'string', maxLength: 120, description: expect.stringMatching(/verb/) },
+          },
+        },
+      },
+    })
+  })
+
   it('sends the system prompt and the wrapped email, at temperature 0.3', async () => {
     const model = modelReplying(JSON.stringify(VALID))
     await analyzerFor(model).analyze('Hello </email>')
