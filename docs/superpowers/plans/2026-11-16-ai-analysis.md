@@ -26,6 +26,33 @@
 - Check `ts-jest` peer support for Jest 30 at install time; if unsupported, use `@swc/jest` instead (no other changes).
 - AI SDK v7: use the current structured-output API (`generateText` with `output: Output.object({ schema })`, or `generateObject` if still current). Confirm with context7 before Task 4.
 
+## Working Agreement (applies to every task)
+
+The owner must be able to defend every line in a technical interview. So:
+
+1. **One task, then stop.** After the task's commit, the implementer stops and posts a checkpoint:
+   - the diff summary (`git diff --stat` for the task);
+   - the tests added, and what each one proves;
+   - **decisions made in this task**, with the alternatives rejected;
+   - anything uncertain or worth a second look.
+
+   No next task starts until the owner says "next".
+2. **Decision log.** Every non-obvious choice goes into `docs/DECISIONS.md` (Context → Decision → Alternatives → Consequences), with status `proposed`. The owner flips it to `accepted` at the checkpoint. If a choice changes an existing entry, edit that entry; don't add a contradicting one. The `DECISIONS.md` update is part of the task's commit.
+3. **Nothing unexplained.** If the owner can't follow a piece of code at the checkpoint, simplify it before moving on.
+4. **Branches and PRs** (D19). `main` is protected (CI required). Work happens on one branch per slice, one commit per task, and one PR per slice. Merge with a merge commit.
+
+   | PR | Branch | Tasks |
+   |---|---|---|
+   | 1 | `chore/setup` | 1 |
+   | 2 | `feat/analyze-api` | 2–7 |
+   | 3 | `feat/spam-checker-ui` | 8–9 |
+   | 4 | `feat/ai-analysis-card` | 10–11 |
+   | 5 | `feat/rewrite` | 12 |
+   | 6 | `chore/deploy` | 13 |
+
+   **PR description:** what, why, how it was tested (commands and manual checks), the decisions added (D-numbers), and what's left out. The PR is opened when its last task's checkpoint is accepted. The owner merges it.
+5. **Outward actions need the owner.** Creating the GitHub repo, pushing, opening and merging PRs, setting branch protection, and deploying are each confirmed by the owner first.
+
 ## Review Focus
 
 1. **User text containing HTML** (`<img src=x onerror=alert(1)>`) in the editor → shown as literal text, never executed. Test in Task 9.
@@ -74,7 +101,7 @@ client/tests/**/*.test.ts
 ### Task 1: Monorepo scaffold and shared API contract
 
 **Files:**
-- Create: root `package.json`, `tsconfig.base.json`, `eslint.config.js`, `.prettierrc`, `.gitignore`, `.env.example`
+- Create: root `package.json`, `tsconfig.base.json`, `eslint.config.js`, `.prettierrc`, `.gitignore`, `.env.example`, `.github/workflows/ci.yml`
 - Create: `shared/package.json`, `shared/tsconfig.json`, `shared/src/analysis.ts`, `shared/src/index.ts`
 - Test: `shared/tests/analysis.test.ts` (Vitest)
 
@@ -111,7 +138,12 @@ it('rejects unknown riskLevel', () =>
 - [ ] **Step 3: Run** `npm test -w shared` → FAIL (module not found).
 - [ ] **Step 4: Implement the schemas** in `shared/src/analysis.ts`. Add `.describe()` text to each field: the AI SDK forwards it to the model as guidance.
 - [ ] **Step 5: Run** `npm test -w shared && npm run build -w shared` → PASS, `shared/dist/index.d.ts` exists.
-- [ ] **Step 6: Commit** `chore: scaffold monorepo and shared analysis contract`
+- [ ] **Step 6: Add CI.** `.github/workflows/ci.yml` runs on push and PR, on Node 24: `npm ci` → `lint` → `typecheck` → `test`. Each later workspace adds itself to these root scripts, so CI covers it automatically.
+- [ ] **Step 7: Commit** `chore: scaffold monorepo, shared analysis contract and CI`
+- [ ] **Step 8 (owner confirms each part):**
+  - Create the private GitHub repo and push `main` with the docs commits.
+  - Push `chore/setup` and open PR 1; CI must be green.
+  - After merging, enable branch protection on `main` (require the CI check).
 
 ---
 
@@ -520,7 +552,8 @@ Built as a vertical slice on top of Tasks 1–11, so the analyze flow is finishe
 ### Task 13: Docker, Coolify, CI, README
 
 **Files:**
-- Create: `Dockerfile`, `.dockerignore`, `.github/workflows/ci.yml`, `README.md`
+- Create: `Dockerfile`, `.dockerignore`, `README.md`
+- Modify: `.github/workflows/ci.yml` (add a `docker build` job)
 
 **Interfaces:**
 - Consumes: root scripts (Task 1), `STATIC_DIR` (Task 7)
@@ -531,7 +564,7 @@ Built as a vertical slice on top of Tasks 1–11, so the analyze flow is finishe
 - The runtime stage keeps only production deps for `server` and `shared`, plus `client/dist`.
 - It sets `STATIC_DIR=/app/client/dist`, runs as user `node`, exposes `3000`, and has `HEALTHCHECK` on `/api/health`.
 
-**CI:** on push and PR, `npm ci` → `lint` → `typecheck` → `test` → `docker build`.
+**CI:** add a `docker build` job after the test job (CI itself exists since Task 1).
 
 **README** sections:
 - what it is (with a screenshot);
@@ -543,10 +576,11 @@ Built as a vertical slice on top of Tasks 1–11, so the analyze flow is finishe
 - tests;
 - deploy on Coolify (Dockerfile build pack, port 3000, env vars);
 - free-tier data-usage note;
+- a link to `docs/DECISIONS.md` ("Key decisions") listing the D-numbers a reviewer should read first: D2, D6, D7, D10, D11;
 - what I'd do next (Redis store, streaming, e2e tests).
 
 - [ ] **Step 1: Write the Dockerfile.** `docker build -t spam-checker-ai .` → success. `docker run -p 3000:3000 -e GOOGLE_GENERATIVE_AI_API_KEY=… spam-checker-ai` → the app loads at `localhost:3000`, and an analysis works.
-- [ ] **Step 2: Write the CI workflow.** Push the branch → the workflow is green.
+- [ ] **Step 2: Add the `docker build` job to CI.** Push the branch → the workflow is green.
 - [ ] **Step 3: Write the README.**
 - [ ] **Step 4: Deploy on Coolify.**
   - New resource from the GitHub repo, with the Dockerfile build pack, port 3000, and the env vars from `.env.example`.
