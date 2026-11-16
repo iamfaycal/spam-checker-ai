@@ -1,0 +1,105 @@
+/* Palette taken from the original tool (Tailwind values noted). */
+:root {
+  --text: #0f172a;
+  --muted: #64748b;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --aside: #f2f3f5;
+  --border: #e6e7eb;
+  --focus: #93c5fd;
+  --accent: #2563eb;
+
+  --cat-urgency: #f87171; /* red-400 */
+  --cat-shady: #f9a8d4; /* pink-300 */
+  --cat-overpromise: #fdba74; /* orange-300 */
+  --cat-money: #fcd34d; /* yellow-300 */
+  --cat-unnatural: #d1d5db; /* gray-300 */
+
+  --score-poor: #e11d48;
+  --score-okay: #2563eb;
+  --score-great: #16a34a;
+
+  --radius: 0.75rem;
+  --shadow: 0 10px 30px rgb(15 23 42 / 6%);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  line-height: 1.5;
+}
+
+#app {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+.hero {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.hero__eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero__title {
+  margin: 0.25rem 0 0.75rem;
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  line-height: 1.15;
+}
+
+.hero__lead {
+  margin: 0;
+  color: var(--muted);
+}
+
+.card {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  background: var(--surface);
+}
+
+.card__editor {
+  min-width: 0; /* let long words wrap instead of widening the grid */
+}
+
+.card__aside {
+  padding: 1.25rem 1rem;
+  background: var(--aside);
+}
+
+@media (max-width: 767px) {
+  #app {
+    padding: 2rem 1rem;
+  }
+
+  .card {
+    grid-template-columns: 1fr;
+  }
+}

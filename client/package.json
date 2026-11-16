@@ -1,0 +1,24 @@
+{
+  "name": "@spam-checker/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "vue-tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.11",
+    "@vue/test-utils": "^2.6.0",
+    "jsdom": "^29.1.1",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0",
+    "vue-tsc": "^3.3.14"
+  },
+  "dependencies": {
+    "@spam-checker/shared": "^0.0.0",
+    "vue": "^3.5.45"
+  }
+}

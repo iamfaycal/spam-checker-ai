@@ -1,0 +1,68 @@
+import { mount } from '@vue/test-utils'
+import { describe, expect, it } from 'vitest'
+import App from '../../src/App.vue'
+import CategoryList from '../../src/components/CategoryList.vue'
+import ScorePanel from '../../src/components/ScorePanel.vue'
+
+describe('ScorePanel', () => {
+  it('shows the score, words and read time, with the label coloured by class', () => {
+    const wrapper = mount(ScorePanel, {
+      props: { label: 'Poor', words: 57, readTime: 'a few seconds' },
+    })
+    expect(wrapper.text()).toContain('Overall score')
+    expect(wrapper.get('.score--poor').text()).toBe('Poor')
+    expect(wrapper.text()).toContain('57')
+    expect(wrapper.text()).toContain('a few seconds')
+  })
+
+  it('asks for content when there are fewer than 2 words (like the original)', () => {
+    const wrapper = mount(ScorePanel, {
+      props: { label: 'Great', words: 1, readTime: 'a few seconds' },
+    })
+    expect(wrapper.text()).toContain('Add content to get your spam score.')
+    expect(wrapper.text()).not.toContain('Overall score')
+  })
+})
+
+describe('CategoryList', () => {
+  it('lists only the categories with hits, with their keyword count', () => {
+    const wrapper = mount(CategoryList, {
+      props: {
+        groups: {
+          urgency: ['ASAP'],
+          shady: ['Financial', 'Finance'],
+          overpromise: [],
+          money: [],
+          unnatural: [],
+        },
+      },
+    })
+    const items = wrapper.findAll('li')
+    expect(items.map((li) => li.classes())).toEqual([
+      ['category', 'category--urgency'],
+      ['category', 'category--shady'],
+    ])
+    expect(items[0]?.text()).toContain('Urgency')
+    expect(items[0]?.text()).toContain('(1)')
+    expect(items[1]?.text()).toContain('(2)')
+  })
+})
+
+describe('App', () => {
+  it('starts with the sample email: Poor, 57 words, a few seconds', () => {
+    const wrapper = mount(App)
+    expect(wrapper.get('textarea').element.value).toContain('Dear friend')
+    expect(wrapper.get('.score--poor').text()).toBe('Poor')
+    expect(wrapper.text()).toContain('57')
+    expect(wrapper.text()).toContain('a few seconds')
+    expect(wrapper.findAll('.editor__backdrop mark').length).toBeGreaterThan(0)
+  })
+
+  it('updates the score, highlights and categories as the user edits', async () => {
+    const wrapper = mount(App)
+    await wrapper.get('textarea').setValue('Hello Marie, see you tomorrow at the office.')
+    expect(wrapper.get('.score--great').text()).toBe('Great')
+    expect(wrapper.findAll('.editor__backdrop mark')).toHaveLength(0)
+    expect(wrapper.findAll('li.category')).toHaveLength(0)
+  })
+})
