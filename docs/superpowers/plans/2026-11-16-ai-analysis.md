@@ -37,20 +37,22 @@ The owner must be able to defend every line in a technical interview. So:
    - anything uncertain or worth a second look.
 
    No next task starts until the owner says "next".
+
 2. **Decision log.** Every non-obvious choice goes into `docs/DECISIONS.md` (Context → Decision → Alternatives → Consequences), with status `proposed`. The owner flips it to `accepted` at the checkpoint. If a choice changes an existing entry, edit that entry; don't add a contradicting one. The `DECISIONS.md` update is part of the task's commit.
 3. **Nothing unexplained.** If the owner can't follow a piece of code at the checkpoint, simplify it before moving on.
 4. **Branches and PRs** (D19). `main` is protected (CI required). Work happens on one branch per slice, one commit per task, and one PR per slice. Merge with a merge commit.
 
-   | PR | Branch | Tasks |
-   |---|---|---|
-   | 1 | `chore/setup` | 1 |
-   | 2 | `feat/analyze-api` | 2–7 |
-   | 3 | `feat/spam-checker-ui` | 8–9 |
-   | 4 | `feat/ai-analysis-card` | 10–11 |
-   | 5 | `feat/rewrite` | 12 |
-   | 6 | `chore/deploy` | 13 |
+   | PR  | Branch                  | Tasks |
+   | --- | ----------------------- | ----- |
+   | 1   | `chore/setup`           | 1     |
+   | 2   | `feat/analyze-api`      | 2–7   |
+   | 3   | `feat/spam-checker-ui`  | 8–9   |
+   | 4   | `feat/ai-analysis-card` | 10–11 |
+   | 5   | `feat/rewrite`          | 12    |
+   | 6   | `chore/deploy`          | 13    |
 
    **PR description:** what, why, how it was tested (commands and manual checks), the decisions added (D-numbers), and what's left out. The PR is opened when its last task's checkpoint is accepted. The owner merges it.
+
 5. **Outward actions need the owner.** Creating the GitHub repo, pushing, opening and merging PRs, setting branch protection, and deploying are each confirmed by the owner first.
 
 ## Review Focus
@@ -101,11 +103,13 @@ client/tests/**/*.test.ts
 ### Task 1: Monorepo scaffold and shared API contract
 
 **Files:**
+
 - Create: root `package.json`, `tsconfig.base.json`, `eslint.config.js`, `.prettierrc`, `.gitignore`, `.env.example`, `.github/workflows/ci.yml`
 - Create: `shared/package.json`, `shared/tsconfig.json`, `shared/src/analysis.ts`, `shared/src/index.ts`
 - Test: `shared/tests/analysis.test.ts` (Vitest)
 
 **Interfaces:**
+
 - Produces (package `@spam-checker/shared`, built to `dist/` with `tsc`):
   - `MAX_TEXT_LENGTH = 5000`, `SUGGESTION_COUNT = 3`
   - `AnalyzeRequestSchema` → `{ text: string }` (trimmed, 1..5000)
@@ -129,10 +133,18 @@ it('rejects text over 5000 chars', () =>
 it('rejects 2 or 4 suggestions', () => {
   const base = { summary: 's', riskLevel: 'high' }
   expect(AnalysisResultSchema.safeParse({ ...base, suggestions: ['a', 'b'] }).success).toBe(false)
-  expect(AnalysisResultSchema.safeParse({ ...base, suggestions: ['a', 'b', 'c', 'd'] }).success).toBe(false)
+  expect(
+    AnalysisResultSchema.safeParse({ ...base, suggestions: ['a', 'b', 'c', 'd'] }).success,
+  ).toBe(false)
 })
 it('rejects unknown riskLevel', () =>
-  expect(AnalysisResultSchema.safeParse({ summary: 's', riskLevel: 'extreme', suggestions: ['a','b','c'] }).success).toBe(false))
+  expect(
+    AnalysisResultSchema.safeParse({
+      summary: 's',
+      riskLevel: 'extreme',
+      suggestions: ['a', 'b', 'c'],
+    }).success,
+  ).toBe(false))
 ```
 
 - [ ] **Step 3: Run** `npm test -w shared` → FAIL (module not found).
@@ -150,10 +162,12 @@ it('rejects unknown riskLevel', () =>
 ### Task 2: Server config
 
 **Files:**
+
 - Create: `server/package.json`, `server/tsconfig.json`, `server/jest.config.ts`, `server/src/config.ts`
 - Test: `server/tests/config.test.ts`
 
 **Interfaces:**
+
 - Produces: `loadConfig(env: NodeJS.ProcessEnv): Config`, where `Config = { port: number; trustProxy: number; llm: { provider: 'google'|'openai'|'anthropic'; model: string; timeoutMs: number }; rateLimit: { perMinute: number; perDay: number; globalPerMinute: number; globalDailyCap: number } }`. It throws `Error` listing every invalid key.
 - Jest maps `@spam-checker/shared` to `../shared/src` through `moduleNameMapper`, so tests don't need a build.
 
@@ -168,13 +182,16 @@ it('rejects unknown riskLevel', () =>
 ### Task 3: System prompt and user prompt builder
 
 **Files:**
+
 - Create: `server/src/analysis/prompt.ts`
 - Test: `server/tests/prompt.test.ts`
 
 **Interfaces:**
+
 - Produces: `SYSTEM_PROMPT: string`, `buildUserPrompt(text: string): string`
 
 The system prompt must say that the model:
+
 - is an email-deliverability expert;
 - analyzes how likely the email is to land in spam and why;
 - writes the summary in 1–2 sentences, at most 400 characters;
@@ -210,10 +227,12 @@ it('system prompt pins the contract', () => {
 ### Task 4: LLM analyzer and model factory
 
 **Files:**
+
 - Create: `server/src/analysis/errors.ts`, `server/src/analysis/analyzer.ts`, `server/src/llm/model.ts`
 - Test: `server/tests/analyzer.test.ts`, `server/tests/model.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AnalysisResultSchema`, `AnalysisResult` (Task 1); `SYSTEM_PROMPT`, `buildUserPrompt` (Task 3); `Config['llm']` (Task 2)
 - Produces:
   - `interface Analyzer { analyze(text: string, signal?: AbortSignal): Promise<AnalysisResult> }`
@@ -243,23 +262,25 @@ it('system prompt pins the contract', () => {
 ### Task 5: `POST /api/analyze` route, app factory, error handling
 
 **Files:**
+
 - Create: `server/src/http/analyze-route.ts`, `server/src/http/error-handler.ts`, `server/src/app.ts`
 - Test: `server/tests/analyze-route.test.ts`
 
 **Interfaces:**
+
 - Consumes: `Analyzer`, `AnalyzerError` (Task 4); `AnalyzeRequestSchema`, `ApiErrorBody` (Task 1); `Config` (Task 2)
 - Produces: `createApp(deps: { analyzer: Analyzer; config: Config; staticDir?: string }): express.Express`. Task 6 inserts its limiters inside `createApp`, before the route.
 
 Error mapping:
 
-| Condition | Status | Code |
-|---|---|---|
-| Body fails the schema, or is not JSON | 400 | `INVALID_INPUT` |
-| Body larger than 20kb | 413 | `PAYLOAD_TOO_LARGE` |
-| `AnalyzerError` timeout | 504 | `LLM_TIMEOUT` |
-| `AnalyzerError` bad_output | 502 | `LLM_BAD_OUTPUT` |
-| `AnalyzerError` provider | 503 | `LLM_UNAVAILABLE` |
-| Anything else | 500 | `INTERNAL`, with a generic message and no stack in the body |
+| Condition                             | Status | Code                                                        |
+| ------------------------------------- | ------ | ----------------------------------------------------------- |
+| Body fails the schema, or is not JSON | 400    | `INVALID_INPUT`                                             |
+| Body larger than 20kb                 | 413    | `PAYLOAD_TOO_LARGE`                                         |
+| `AnalyzerError` timeout               | 504    | `LLM_TIMEOUT`                                               |
+| `AnalyzerError` bad_output            | 502    | `LLM_BAD_OUTPUT`                                            |
+| `AnalyzerError` provider              | 503    | `LLM_UNAVAILABLE`                                           |
+| Anything else                         | 500    | `INTERNAL`, with a generic message and no stack in the body |
 
 - [ ] **Step 1: Failing Supertest tests** using a fake `Analyzer` (`jest.fn()`):
   - Valid text → 200 with the fake's result; the fake was called with the trimmed text.
@@ -283,15 +304,18 @@ Error mapping:
 ### Task 6: Rate limiting (per IP + global caps) behind a proxy
 
 **Files:**
+
 - Create: `server/src/http/rate-limit.ts`
 - Modify: `server/src/app.ts` (add `app.set('trust proxy', config.trustProxy)` and put the limiters on `/api/analyze` only)
 - Test: `server/tests/rate-limit.test.ts`
 
 **Interfaces:**
+
 - Consumes: `Config['rateLimit']`, `createApp` (Task 5)
 - Produces: `createRateLimiters(cfg: Config['rateLimit']): RequestHandler[]`, in order: per-minute IP, per-day IP, global per-minute, global daily.
 
 Behavior:
+
 - The two IP limiters use `express-rate-limit` with `standardHeaders: 'draft-8'` and `legacyHeaders: false`. They return 429 `RATE_LIMITED` with a `Retry-After` header.
 - Global limiters: express-rate-limit with `keyGenerator: () => 'global'`.
   - The per-minute one (1 min window) returns 503 `LLM_UNAVAILABLE` with `Retry-After`. Many IPs together could otherwise exceed Google's 15 RPM.
@@ -315,10 +339,12 @@ Behavior:
 ### Task 7: Server entry point
 
 **Files:**
+
 - Create: `server/src/main.ts`
 - Modify: `server/package.json` scripts: `dev` (`tsx watch src/main.ts`), `build` (`tsc`), `start` (`node dist/main.js`)
 
 **Interfaces:**
+
 - Consumes: `loadConfig`, `createModel`, `createLlmAnalyzer`, `createApp`
 - Produces: a runnable server. `STATIC_DIR` env (default: unset) tells it where to serve the client from.
 
@@ -334,11 +360,13 @@ Behavior:
 ### Task 8: Client spam-word engine (port of the existing tool)
 
 **Files:**
+
 - Create: `client/package.json`, `client/vite.config.ts` (with the Vitest config and a `/api` proxy to `:3000`), `client/tsconfig.json`, `client/index.html`
 - Create: `client/src/lib/spam-words.ts`, `client/src/lib/spam-check.ts`
 - Test: `client/tests/lib/spam-check.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `type SpamCategory = 'urgency' | 'shady' | 'overpromise' | 'money' | 'unnatural'`
   - `SPAM_RULES: readonly { pattern: RegExp; keyword: string; category: SpamCategory }[]`
@@ -348,6 +376,7 @@ Behavior:
   - `wordCount(text: string): number`, `readTime(words: number): string` (`'a few seconds'` under 60 words, otherwise `'~N min'` at 200 wpm)
 
 **Source of the rules:** the original rules are in `https://mailmeteor.com/assets/js/spam-checker.js`, in the `START(spam-words-checker)` section (~770 entries `{ highlight: /…/gi, keyword, category }`).
+
 - Port them with a one-off script: download the file, extract the entries with a regex, emit `spam-words.ts`. Commit the generated file, not the script output elsewhere.
 - Credit the source in the file header.
 - **The client owns these rules.** If they object to reuse, swap in a curated list; the engine doesn't change.
@@ -377,10 +406,12 @@ label = score > 20 ? 'Poor' : score > 5 ? 'Okay' : 'Great'
 ### Task 9: Editor, score panel, category list (UI duplicate)
 
 **Files:**
+
 - Create: `client/src/lib/highlight.ts`, `client/src/components/EmailEditor.vue`, `ScorePanel.vue`, `CategoryList.vue`, `client/src/App.vue`, `client/src/main.ts`, `client/src/styles.css`
 - Test: `client/tests/lib/highlight.test.ts`, `client/tests/components/EmailEditor.test.ts`
 
 **Interfaces:**
+
 - Consumes: `findHits`, `groupByCategory`, `scoreLabel`, `wordCount`, `readTime` (Task 8)
 - Produces:
   - `escapeHtml(s: string): string`
@@ -391,6 +422,7 @@ label = score > 20 ? 'Poor' : score > 5 ? 'Okay' : 'Great'
   - `App.vue` holds `text` (`ref`) and `hits` (`computed`). It lays out the editor on the left and a sidebar on the right with ScorePanel, a slot for the AI card, and CategoryList, as in the screenshot.
 
 **Layout:**
+
 - Editor technique: a transparent `<textarea>` over a backdrop `<div>` with identical font metrics, rendering `toHighlightedHtml`, with scroll synced. This is what highlight-within-textarea does, without jQuery.
 - Look: header "FREE TOOL / Spam Checker / Copy/paste an email message…"; a card with a 2-column layout; category colors pink for shady, orange for overpromise, red for urgency.
 - Use CSS variables for the palette. The layout stacks to one column under 768px.
@@ -410,10 +442,12 @@ label = score > 20 ? 'Poor' : score > 5 ? 'Okay' : 'Great'
 ### Task 10: API client and `useAiAnalysis` composable
 
 **Files:**
+
 - Create: `client/src/lib/api.ts`, `client/src/composables/useAiAnalysis.ts`
 - Test: `client/tests/lib/api.test.ts`, `client/tests/composables/useAiAnalysis.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AnalysisResultSchema`, `ApiErrorBody`, `ErrorCode` (Task 1)
 - Produces:
   - `class ApiError extends Error { code: ErrorCode | 'NETWORK'; retryAfterSeconds?: number }`
@@ -421,19 +455,20 @@ label = score > 20 ? 'Poor' : score > 5 ? 'Okay' : 'Great'
   - `useAiAnalysis(text: Ref<string>)` → `{ status: Ref<'idle'|'loading'|'success'|'error'>; result: Ref<AnalysisResult|null>; error: Ref<ApiError|null>; isStale: ComputedRef<boolean>; analyze(): Promise<void> }`
 
 **Behavior:**
+
 - `analyze()` aborts any in-flight request first, and remembers the text it sent.
 - `isStale` is true when `status === 'success'` and the current text differs from the sent text.
 - A response that arrives for an aborted request is ignored.
 
 **`errorMessage(e: ApiError): string`** user-facing copy, exported from `api.ts`:
 
-| Code | Message |
-|---|---|
-| `RATE_LIMITED` | "Too many analyses — try again in {n}s." |
+| Code                | Message                                                     |
+| ------------------- | ----------------------------------------------------------- |
+| `RATE_LIMITED`      | "Too many analyses — try again in {n}s."                    |
 | `DAILY_CAP_REACHED` | "The demo's daily AI quota is used up. Try again tomorrow." |
-| `INVALID_INPUT` | "Add some text (max 5,000 characters)." |
-| `LLM_*` | "The AI couldn't analyze this email. Try again." |
-| `NETWORK` | "Network error — check your connection." |
+| `INVALID_INPUT`     | "Add some text (max 5,000 characters)."                     |
+| `LLM_*`             | "The AI couldn't analyze this email. Try again."            |
+| `NETWORK`           | "Network error — check your connection."                    |
 
 - [ ] **Step 1: Failing tests** (mock `fetch` with `vi.fn`):
   - 200 with a valid body → resolves.
@@ -452,15 +487,18 @@ label = score > 20 ? 'Poor' : score > 5 ? 'Okay' : 'Great'
 ### Task 11: `AiAnalysisCard` component and wiring
 
 **Files:**
+
 - Create: `client/src/components/AiAnalysisCard.vue`
 - Modify: `client/src/App.vue` (put the card between ScorePanel and CategoryList)
 - Test: `client/tests/components/AiAnalysisCard.test.ts`
 
 **Interfaces:**
+
 - Consumes: `useAiAnalysis`, `errorMessage` (Task 10)
 - Produces: `<AiAnalysisCard :status :result :error :is-stale @analyze />`. It's presentational; `App.vue` owns the composable.
 
 **States:**
+
 - **idle:** the "✦ AI analysis" title and an "Analyze with AI" button. The button is disabled when the text is empty.
 - **loading:** a skeleton and a disabled button.
 - **success:**
@@ -472,6 +510,7 @@ label = score > 20 ? 'Poor' : score > 5 ? 'Okay' : 'Great'
 - **error:** `errorMessage(error)` and a "Try again" button. For `RATE_LIMITED`, also show the countdown from `retryAfterSeconds`.
 
 **Accessibility:**
+
 - The card is a `<section aria-labelledby>`.
 - The result region has `aria-live="polite"`.
 - Everything is reachable with Tab.
@@ -493,12 +532,14 @@ label = score > 20 ? 'Poor' : score > 5 ? 'Okay' : 'Great'
 Built as a vertical slice on top of Tasks 1–11, so the analyze flow is finished and reviewable first.
 
 **Files:**
+
 - Modify: `shared/src/analysis.ts`, `server/src/analysis/prompt.ts`, `server/src/analysis/analyzer.ts`, `server/src/app.ts`
 - Create: `server/src/http/rewrite-route.ts`, `client/src/composables/useRewrite.ts`
 - Modify: `client/src/lib/api.ts`, `client/src/components/AiAnalysisCard.vue`, `client/src/App.vue`
 - Test: extend `shared/tests/analysis.test.ts`, `server/tests/prompt.test.ts`, `analyzer.test.ts`, `rate-limit.test.ts`; create `server/tests/rewrite-route.test.ts`, `client/tests/composables/useRewrite.test.ts`; extend `AiAnalysisCard.test.ts`
 
 **Interfaces:**
+
 - Shared:
   - `RewriteRequestSchema` → `{ text: string (trimmed, 1..5000); suggestions: string[] (length 3, each 1..120) }`
   - `RewriteResultSchema` → `{ rewrittenText: string (1..5000) }`
@@ -513,6 +554,7 @@ Built as a vertical slice on top of Tasks 1–11, so the analyze flow is finishe
   - `useRewrite(text: Ref<string>)` → `{ status: Ref<'idle'|'loading'|'error'>; error: Ref<ApiError|null>; canUndo: Ref<boolean>; rewrite(suggestions: string[]): Promise<void>; undo(): void }`
 
 **Rewrite prompt rules:**
+
 - Apply each suggestion.
 - Keep the meaning, the language, the sender's voice and the facts. Don't invent figures, names or links.
 - Keep a similar length (±30%).
@@ -520,6 +562,7 @@ Built as a vertical slice on top of Tasks 1–11, so the analyze flow is finishe
 - Return only the email body.
 
 **UX:**
+
 - "✦ Rewrite with AI" appears only in the success, non-stale state. While it runs, it shows a loading state.
 - On success:
   - the editor text is replaced (so highlighting and score update live);
@@ -552,13 +595,16 @@ Built as a vertical slice on top of Tasks 1–11, so the analyze flow is finishe
 ### Task 13: Docker, Coolify, CI, README
 
 **Files:**
+
 - Create: `Dockerfile`, `.dockerignore`, `README.md`
 - Modify: `.github/workflows/ci.yml` (add a `docker build` job)
 
 **Interfaces:**
+
 - Consumes: root scripts (Task 1), `STATIC_DIR` (Task 7)
 
 **Dockerfile:**
+
 - Multi-stage, based on `node:24-alpine`.
 - The build stage runs `npm ci` and `npm run build`.
 - The runtime stage keeps only production deps for `server` and `shared`, plus `client/dist`.
@@ -567,6 +613,7 @@ Built as a vertical slice on top of Tasks 1–11, so the analyze flow is finishe
 **CI:** add a `docker build` job after the test job (CI itself exists since Task 1).
 
 **README** sections:
+
 - what it is (with a screenshot);
 - architecture diagram (text);
 - the API contract with a curl example and error-code table;
