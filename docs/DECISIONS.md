@@ -113,7 +113,10 @@ New entries are added during the build (see "Working agreement" in the plan). St
 
 - **Decision:** an "Analyze with AI" button. Editing after a result marks it outdated, and a new click aborts any in-flight request.
 - **Alternatives:** debounced auto-analysis (feels magic, but with 15 RPM the quota is gone in minutes).
-- **Consequences:** one call per intention. A late response can never overwrite a newer one.
+- **Consequences:**
+  - One call per intention. A late response can never overwrite a newer one.
+  - The button is disabled, with the reason shown, when the text is empty or over 5,000 characters, the same limits the server enforces.
+  - After a `429`, the card counts down `Retry-After` and keeps "Try again" disabled until it reaches 0, since an earlier click would only get another 429.
 
 ## D13 — Answer in the email's language — accepted
 
@@ -220,3 +223,14 @@ New entries are added during the build (see "Working agreement" in the plan). St
 - **Consequences:**
   - Highlights never nest, so the editor overlay (Task 9) stays simple.
   - On text with nested matches, our hit count is a little lower than the original's. The label can differ only near a threshold. On the sample it doesn't: 8 hits, score 38, Poor (the original gets 9).
+
+## D24 — Client API errors: every code has a message, and nothing unknown crashes the card — accepted
+
+- **Context:** the card must show something sensible for every failure: our error codes, a network drop, a proxy's own error page, or a request we cancelled ourselves.
+- **Decision:**
+  - `analyzeEmail` returns an analysis validated by the shared schema, or throws `ApiError` with a code (`ErrorCode` or `NETWORK`) and `retryAfterSeconds` read from `Retry-After`.
+  - A 200 that breaks the contract is `LLM_BAD_OUTPUT`. An error body that isn't `{ error: { code } }`, such as Traefik's HTML 502 while the server restarts, is `INTERNAL`.
+  - A request the client aborted on purpose stays an `AbortError`. `useAiAnalysis` drops any outcome, answer or error, of a request that a newer one replaced (D12).
+  - `errorMessage` is an exhaustive `switch`, so adding a code without copy fails the type check. Codes the plan didn't list map to: `PAYLOAD_TOO_LARGE` → the input message; `NOT_FOUND` and `INTERNAL` → "Something went wrong. Try again."; `RATE_LIMITED` with no `Retry-After` → "try again shortly".
+- **Alternatives:** showing the server's `message` field (couples the UI to server wording, D11); mapping unknown bodies by HTTP status (guesses about responses we don't control).
+- **Consequences:** the client bundles zod, the cost of validating responses with the same schema as the server (D1). Measured: JS goes from 36.5 to 61.2 kB gzipped. `zod/mini` would cut that if it ever matters. Vite aliases `@spam-checker/shared` to its source, so the client never needs a prior build.
