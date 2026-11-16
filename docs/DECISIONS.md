@@ -17,7 +17,10 @@ New entries are added during the build (see "Working agreement" in the plan). St
 - **Context:** brief asks for structured data and a provider-agnostic design.
 - **Decision:** `ai` + `@ai-sdk/google` structured output, using the D1 schema.
 - **Alternatives:** official provider SDKs behind a hand-written adapter (more code, same result); raw `fetch` to Gemini JSON mode (simplest, locked to one provider).
-- **Consequences:** changing provider = `LLM_PROVIDER` + `LLM_MODEL` env vars. The SDK ships a mock model, so the LLM layer is unit-testable without network.
+- **Consequences:**
+  - Changing provider means setting `LLM_PROVIDER`, `LLM_MODEL` and that provider's API key. `createModel` is the only file that names providers.
+  - The SDK ships a mock model (`MockLanguageModelV4`), so the LLM layer is unit-testable without network.
+  - With v7 we call `generateText` with `output: Output.object({ schema })` (`generateObject` is deprecated) and pass the system prompt as `instructions` (`system` is deprecated).
 
 ## D3 — `Analyzer` port injected into `createApp` — accepted
 
@@ -173,3 +176,20 @@ New entries are added during the build (see "Working agreement" in the plan). St
 - **Consequences:**
   - `loadConfig` takes the env as an argument, so tests never touch `process.env`.
   - A variable set to an empty string (`PORT=`) is an error, not the default. Leave it unset to use the default.
+
+## D22 — LLM failures: three kinds, and a visitor leaving is not a failure — accepted
+
+- **Context:** the route must turn every LLM failure into the right status (D11), and a request can also stop because the visitor closed the tab.
+- **Decision:**
+  - The analyzer throws `AnalyzerError` with one of three kinds: `timeout`, `bad_output` or `provider`.
+  - **Timeout:** our own `AbortSignal.timeout(LLM_TIMEOUT_MS)`, combined with the caller's signal through `AbortSignal.any`. If our timeout signal fired, the kind is `timeout`, whatever error the SDK raised.
+  - **Bad output:** the SDK's `NoObjectGeneratedError`, `TypeValidationError` and `JSONParseError`. Then `AnalysisResultSchema` parses the result again as a final guard.
+  - **Provider:** everything else, including the provider's own 429. That 429 means the shared quota ran out, not that this visitor sent too much.
+  - **Caller abort:** re-thrown unchanged, not wrapped. Nobody is listening for the answer, so there is nothing to report.
+  - `temperature: 0.3` and `maxRetries: 1`.
+- **Alternatives:**
+  - The SDK's own `timeout` option, which can't tell "too slow" from "visitor left".
+  - Mapping a caller abort to `provider`, which would log a failure that never happened.
+- **Consequences:**
+  - A retryable provider error (5xx, 429) is retried once after about 2 s.
+  - For a quota 429, that retry is spent for nothing: one extra Google request, and about 2 s more before the visitor sees `503`.

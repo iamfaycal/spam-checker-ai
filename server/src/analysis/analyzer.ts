@@ -1,0 +1,62 @@
+import {
+  JSONParseError,
+  NoObjectGeneratedError,
+  Output,
+  TypeValidationError,
+  generateText,
+  type LanguageModel,
+} from 'ai'
+import { AnalysisResultSchema, type AnalysisResult } from '@spam-checker/shared'
+import { AnalyzerError } from './errors.js'
+import { SYSTEM_PROMPT, buildUserPrompt } from './prompt.js'
+
+/** The port the HTTP layer depends on (D3). Tests swap in a fake; main.ts wires the LLM. */
+export interface Analyzer {
+  analyze(text: string, signal?: AbortSignal): Promise<AnalysisResult>
+}
+
+export function createLlmAnalyzer(opts: { model: LanguageModel; timeoutMs: number }): Analyzer {
+  return {
+    async analyze(text, signal) {
+      // One signal that fires on whichever comes first: our timeout or the caller giving up.
+      const timeout = AbortSignal.timeout(opts.timeoutMs)
+      const abortSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
+
+      let output: unknown
+      try {
+        const result = await generateText({
+          model: opts.model,
+          instructions: SYSTEM_PROMPT,
+          prompt: buildUserPrompt(text),
+          output: Output.object({ schema: AnalysisResultSchema }),
+          temperature: 0.3,
+          maxRetries: 1,
+          abortSignal,
+        })
+        output = result.output
+      } catch (error) {
+        throw classify(error, timeout, signal)
+      }
+
+      // Final guard: never return something the contract doesn't allow, whatever the SDK did.
+      const parsed = AnalysisResultSchema.safeParse(output)
+      if (!parsed.success) throw new AnalyzerError('bad_output', { cause: parsed.error })
+      return parsed.data
+    },
+  }
+}
+
+function classify(error: unknown, timeout: AbortSignal, caller?: AbortSignal): unknown {
+  // The caller gave up (visitor closed the tab): not a failure to report, pass it through.
+  if (caller?.aborted && !timeout.aborted) return error
+  if (timeout.aborted) return new AnalyzerError('timeout', { cause: error })
+  if (
+    NoObjectGeneratedError.isInstance(error) ||
+    TypeValidationError.isInstance(error) ||
+    JSONParseError.isInstance(error)
+  ) {
+    return new AnalyzerError('bad_output', { cause: error })
+  }
+  // Network errors, 5xx, and the provider's own 429: the shared quota, not the visitor (D11).
+  return new AnalyzerError('provider', { cause: error })
+}

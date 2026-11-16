@@ -15,7 +15,11 @@
     "ts-jest": "^29.4.15"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.105",
+    "@ai-sdk/google": "^4.0.121",
+    "@ai-sdk/openai": "^4.0.118",
     "@spam-checker/shared": "^0.0.0",
+    "ai": "^7.0.173",
     "zod": "^4.6.7"
   }
 }
