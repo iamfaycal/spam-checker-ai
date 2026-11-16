@@ -109,6 +109,24 @@ describe('AiAnalysisCard', () => {
       expect(button(wrapper, 'Rewriting').attributes('disabled')).toBeDefined()
     })
 
+    it('counts down a rewrite rate limit and only then enables Rewrite again', async () => {
+      vi.useFakeTimers()
+      const wrapper = card({
+        status: 'success',
+        result: RESULT,
+        rewriteStatus: 'error',
+        rewriteError: new ApiError('RATE_LIMITED', 2),
+      })
+      expect(wrapper.text()).toContain('try again in 2s')
+      expect(button(wrapper, 'Rewrite with AI').attributes('disabled')).toBeDefined()
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(wrapper.text()).toContain('try again in 1s')
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(button(wrapper, 'Rewrite with AI').attributes('disabled')).toBeUndefined()
+    })
+
     it('shows why a rewrite failed', () => {
       const wrapper = card({
         status: 'success',

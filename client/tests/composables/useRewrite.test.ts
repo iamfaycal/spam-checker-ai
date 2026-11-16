@@ -51,6 +51,22 @@ describe('useRewrite', () => {
     expect(rewriter.canUndo.value).toBe(false)
   })
 
+  it('after several rewrites in a row, Undo still goes back to the original', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    fetchMock
+      .mockResolvedValueOnce(json(200, { rewrittenText: 'First rewrite' }))
+      .mockResolvedValueOnce(json(200, { rewrittenText: 'Second rewrite' }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { text, rewriter } = setup()
+
+    await rewriter.rewrite(SUGGESTIONS)
+    await rewriter.rewrite(SUGGESTIONS)
+    expect(text.value).toBe('Second rewrite')
+
+    rewriter.undo()
+    expect(text.value).toBe(ORIGINAL)
+  })
+
   it('stops offering Undo once the user edits the rewritten text', async () => {
     vi.stubGlobal(
       'fetch',

@@ -60,6 +60,30 @@ describe('POST /api/analyze', () => {
     expect(analyze).not.toHaveBeenCalled()
   })
 
+  it('rejects a body the JSON parser refuses for another reason (charset) with 400', async () => {
+    const { analyzer, analyze } = fakeAnalyzer()
+    const res = await request(appWith(analyzer))
+      .post('/api/analyze')
+      .set('content-type', 'application/json; charset=no-such-charset')
+      .send('{"text":"Hello"}')
+
+    expect(res.status).toBe(400)
+    expect(res.body.error.code).toBe('INVALID_INPUT')
+    expect(analyze).not.toHaveBeenCalled()
+  })
+
+  it('does not mistake any error with a `type` field for a bad request body', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const { analyzer } = fakeAnalyzer(async () => {
+      throw Object.assign(new Error('boom'), { type: 'something.internal' })
+    })
+    const res = await request(appWith(analyzer)).post('/api/analyze').send({ text: 'Hi' })
+
+    expect(res.status).toBe(500)
+    expect(res.body.error.code).toBe('INTERNAL')
+    log.mockRestore()
+  })
+
   it('rejects a body over 20kb with 413 PAYLOAD_TOO_LARGE', async () => {
     const { analyzer, analyze } = fakeAnalyzer()
     const res = await request(appWith(analyzer))

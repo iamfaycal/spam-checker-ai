@@ -31,6 +31,14 @@ describe('loadConfig', () => {
   it('accepts TRUST_PROXY=0 (no proxy in front, e.g. local dev)', () =>
     expect(loadConfig({ TRUST_PROXY: '0' }).trustProxy).toBe(0))
 
+  it('requires LLM_MODEL when the provider is not the default one', () => {
+    expect(() => loadConfig({ LLM_PROVIDER: 'openai' })).toThrow(/LLM_MODEL/)
+    expect(loadConfig({ LLM_PROVIDER: 'openai', LLM_MODEL: 'gpt-5-mini' }).llm.model).toBe(
+      'gpt-5-mini',
+    )
+    expect(loadConfig({ LLM_PROVIDER: 'google' }).llm.model).toBe('gemini-3.5-flash-lite')
+  })
+
   it('names the key when a number is invalid', () =>
     expect(() => loadConfig({ RATE_LIMIT_PER_MINUTE: 'abc' })).toThrow(/RATE_LIMIT_PER_MINUTE/))
 

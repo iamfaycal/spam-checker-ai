@@ -94,7 +94,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
 
 ## D11 — Error contract — accepted
 
-- **Decision:** one body shape, `{ error: { code, message } }`.
+- **Decision:** one body shape, `{ error: { code, message } }`. A body-parser rejection is recognised by its `type` **and** a 4xx `status`, so no other error carrying a `type` field becomes a 400.
 
   | Condition                                  | Status | Code                                    |
   | ------------------------------------------ | ------ | --------------------------------------- |
@@ -142,7 +142,8 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - The editor is read-only while a rewrite runs, and the composable refuses to apply a rewrite if the text changed meanwhile, so typed text is never overwritten.
   - Undo restores the original byte for byte (tested with whitespace, tabs and newlines).
   - The Undo button is rendered outside the analysis states, so it stays reachable even when the re-analysis of a rewrite fails (for example, the daily cap is reached) or is still running. It is hidden only while a new rewrite runs.
-  - Undo is one level: after a second rewrite it restores the first rewrite, not the original.
+  - After several rewrites in a row, Undo still returns to the original: the first text is kept while the editor holds a rewrite.
+  - Rate-limited rewrites count down `Retry-After` like analyses, and Rewrite stays disabled until the wait is over. Waits are shown for people ("42s", "3 min", "23 h 24 min").
 
 ## D16 — Spam rules ported from the existing tool — accepted
 
@@ -207,6 +208,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - API keys are not validated here, because each provider SDK reads its own variable.
 - **Alternatives:** reading `process.env` where it's used (failures surface late, defaults scattered); a config library (overkill for 9 variables).
 - **Consequences:**
+  - `LLM_MODEL` defaults to the Gemini model only with the default provider. With `LLM_PROVIDER=openai` or `anthropic`, a missing `LLM_MODEL` is a boot error, instead of a server that starts and then fails every request.
   - `loadConfig` takes the env as an argument, so tests never touch `process.env`.
   - A variable set to an empty string (`PORT=`) is an error, not the default. Leave it unset to use the default.
 
@@ -219,14 +221,15 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - **Bad output:** the SDK's `NoObjectGeneratedError`, `TypeValidationError` and `JSONParseError`. Then `AnalysisResultSchema` parses the result again as a final guard.
   - **Provider:** everything else, including the provider's own 429. That 429 means the shared quota ran out, not that this visitor sent too much.
   - **Caller abort:** re-thrown unchanged, not wrapped. Nobody is listening for the answer, so there is nothing to report. The route aborts its signal when the connection closes before the answer is sent, which also stops a paid LLM call, and then sends nothing.
-  - `temperature: 0.3` and `maxRetries: 1`.
+  - `temperature: 0.3`. One retry for a passing server or network error, done by the analyzer itself (`maxRetries: 0` in the SDK), **never for a 429**: a quota error fails fast.
+  - An empty or safety-filtered answer (`NoOutputGeneratedError`) is `bad_output` (502), not `provider`.
   - The error handler logs the kind and the underlying cause of every `AnalyzerError` on the server (for example a missing API key), and sends the visitor only the generic code and message.
 - **Alternatives:**
   - The SDK's own `timeout` option, which can't tell "too slow" from "visitor left".
   - Mapping a caller abort to `provider`, which would log a failure that never happened.
 - **Consequences:**
-  - A retryable provider error (5xx, 429) is retried once after about 2 s.
-  - For a quota 429, that retry is spent for nothing: one extra Google request, and about 2 s more before the visitor sees `503`.
+  - The SDK's `maxRetries` can't exclude a status code, so the retry lives in the analyzer. It's tested: a 429 makes 1 call, a 503 makes 2, and a 503 followed by a success resolves.
+  - A 5xx retry can make one global-cap slot cost two upstream requests. The caps (12/min, 400/day) leave headroom under Google's 15/500 for it.
 
 ## D23 — Spam engine: where we differ from the original tool — accepted
 

@@ -63,17 +63,18 @@ curl -s localhost:3000/api/analyze -H 'content-type: application/json' \
 
 Every error has the same shape, `{ "error": { "code": "...", "message": "..." } }`. The client reads the **code**, never the message.
 
-| Condition                                                                       | Status              | Code                |
-| ------------------------------------------------------------------------------- | ------------------- | ------------------- |
-| Invalid input (schema, not JSON)                                                | 400                 | `INVALID_INPUT`     |
-| Unknown `/api` route                                                            | 404                 | `NOT_FOUND`         |
-| Body over 20kb                                                                  | 413                 | `PAYLOAD_TOO_LARGE` |
-| Per-IP limit                                                                    | 429 + `Retry-After` | `RATE_LIMITED`      |
-| Global per-minute cap, or any provider error (including the provider's own 429) | 503                 | `LLM_UNAVAILABLE`   |
-| Global daily cap                                                                | 503 + `Retry-After` | `DAILY_CAP_REACHED` |
-| LLM answer doesn't match the schema                                             | 502                 | `LLM_BAD_OUTPUT`    |
-| LLM timeout (15 s)                                                              | 504                 | `LLM_TIMEOUT`       |
-| Anything else (details are logged, never sent)                                  | 500                 | `INTERNAL`          |
+| Condition                                        | Status              | Code                |
+| ------------------------------------------------ | ------------------- | ------------------- |
+| Invalid input (schema, not JSON)                 | 400                 | `INVALID_INPUT`     |
+| Unknown `/api` route                             | 404                 | `NOT_FOUND`         |
+| Body over 20kb                                   | 413                 | `PAYLOAD_TOO_LARGE` |
+| Per-IP limit                                     | 429 + `Retry-After` | `RATE_LIMITED`      |
+| Global per-minute cap                            | 503 + `Retry-After` | `LLM_UNAVAILABLE`   |
+| Provider error, including the provider's own 429 | 503                 | `LLM_UNAVAILABLE`   |
+| Global daily cap                                 | 503 + `Retry-After` | `DAILY_CAP_REACHED` |
+| LLM answer doesn't match the schema              | 502                 | `LLM_BAD_OUTPUT`    |
+| LLM timeout (15 s)                               | 504                 | `LLM_TIMEOUT`       |
+| Anything else (details are logged, never sent)   | 500                 | `INTERNAL`          |
 
 A 429 means "_you_, slow down". When the shared quota is the problem, the answer is a 503, never a 429.
 
@@ -89,7 +90,7 @@ The routes are public, so every request spends a shared LLM quota. Gemini's free
 | Global, per day    | 400     | only requests that reach the LLM | 503    |
 
 - **Per-IP limits run before body parsing,** so malformed or oversized requests still count and probing isn't free.
-- **Global caps run after validation,** so junk can't drain the shared quota. They sit below Google's limits, so our 503 always comes before Google's 429.
+- **Global caps run after validation,** so junk can't drain the shared quota. They sit below Google's limits (15/min, 500/day), so our 503 comes before Google's 429. A quota 429 from Google is never retried. A 5xx or network error is retried once, which can cost one extra upstream request: the caps leave headroom (3/min, 100/day) for that.
 - **Analyze and rewrite share** one bucket per IP and the global caps.
 - **`trust proxy = 1`:** on Coolify, Traefik sits in front of Express and appends the real client address **last** in `X-Forwarded-For`. Trusting exactly one hop makes `req.ip` that address.
   - With `false`, every visitor would share Traefik's IP and one limit.
@@ -131,7 +132,7 @@ npm run lint      # ESLint + Prettier
 npm run typecheck # tsc / vue-tsc
 ```
 
-There are **186 tests**: Vitest for `shared` and `client`, Jest + Supertest for `server`.
+There are **214 tests**: Vitest for `shared` and `client`, Jest + Supertest for `server`.
 
 - **Server:**
   - the LLM layer runs on the AI SDK's mock model, with no network;

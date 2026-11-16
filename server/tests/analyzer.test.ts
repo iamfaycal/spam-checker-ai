@@ -110,8 +110,8 @@ describe('createLlmAnalyzer', () => {
     expect(error).toMatchObject({ kind: 'provider' })
   })
 
-  it("maps the provider's own 429 (quota) to provider, never to a visitor rate limit", async () => {
-    // As Google sends it: a 429 is retryable, so the SDK retries once (maxRetries: 1, ~2 s backoff).
+  it("maps the provider's own 429 (quota) to provider, without retrying it", async () => {
+    // Retrying a quota error spends another request for nothing: it fails fast instead (D22).
     const quota = new APICallError({
       message: 'Resource has been exhausted',
       url: 'https://generativelanguage.googleapis.com',
@@ -121,8 +121,56 @@ describe('createLlmAnalyzer', () => {
     const model = modelThrowing(quota)
     const error = await errorOf(analyzerFor(model, 15_000).analyze('x'))
     expect(error).toMatchObject({ kind: 'provider' })
+    expect(model.doGenerateCalls).toHaveLength(1)
+  })
+
+  it('retries a server error once, then reports provider', async () => {
+    const overloaded = new APICallError({
+      message: 'The model is overloaded',
+      url: 'https://generativelanguage.googleapis.com',
+      requestBodyValues: {},
+      statusCode: 503,
+    })
+    const model = modelThrowing(overloaded)
+    const error = await errorOf(analyzerFor(model, 15_000).analyze('x'))
+    expect(error).toMatchObject({ kind: 'provider' })
     expect(model.doGenerateCalls).toHaveLength(2)
-  }, 10_000)
+  })
+
+  it('succeeds when the single retry of a server error succeeds', async () => {
+    let calls = 0
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        calls += 1
+        if (calls === 1) {
+          throw new APICallError({
+            message: 'busy',
+            url: 'u',
+            requestBodyValues: {},
+            statusCode: 500,
+          })
+        }
+        return (await modelReplying(JSON.stringify(VALID)).doGenerate({} as never)) as never
+      },
+    })
+    await expect(analyzerFor(model, 15_000).analyze('x')).resolves.toEqual(VALID)
+    expect(calls).toBe(2)
+  })
+
+  it('reports an empty or safety-filtered answer as bad_output, not provider', async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => ({
+        content: [],
+        finishReason: { unified: 'content-filter', raw: 'SAFETY' },
+        usage: {
+          inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 0, text: 0, reasoning: 0 },
+        },
+        warnings: [],
+      }),
+    })
+    expect(await errorOf(analyzerFor(model).analyze('x'))).toMatchObject({ kind: 'bad_output' })
+  })
 
   it('lets a caller abort through unchanged (the visitor left; nothing to report)', async () => {
     const controller = new AbortController()

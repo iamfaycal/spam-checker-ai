@@ -7,20 +7,29 @@ const count = (fallback: number) => z.coerce.number().int().positive().default(f
  * The schema mirrors env variable names one to one, so a validation issue's path
  * is the variable to fix. It is reshaped into the nested `Config` afterwards.
  */
-const EnvSchema = z.object({
-  PORT: count(3000),
-  // 0 = no proxy in front (Express treats it as `false`); 1 = Traefik on Coolify (D7).
-  TRUST_PROXY: z.coerce.number().int().nonnegative().default(1),
-  LLM_PROVIDER: z.enum(['google', 'openai', 'anthropic']).default('google'),
-  LLM_MODEL: z.string().min(1).default('gemini-3.5-flash-lite'),
-  LLM_TIMEOUT_MS: count(15_000),
-  RATE_LIMIT_PER_MINUTE: count(5),
-  RATE_LIMIT_PER_DAY: count(20),
-  GLOBAL_PER_MINUTE: count(12),
-  GLOBAL_DAILY_CAP: count(400),
-  // Built client to serve in production (set in the Docker image); unset in dev.
-  STATIC_DIR: z.string().min(1).optional(),
-})
+const EnvSchema = z
+  .object({
+    PORT: count(3000),
+    // 0 = no proxy in front (Express treats it as `false`); 1 = Traefik on Coolify (D7).
+    TRUST_PROXY: z.coerce.number().int().nonnegative().default(1),
+    LLM_PROVIDER: z.enum(['google', 'openai', 'anthropic']).default('google'),
+    LLM_MODEL: z.string().min(1).optional(),
+    LLM_TIMEOUT_MS: count(15_000),
+    RATE_LIMIT_PER_MINUTE: count(5),
+    RATE_LIMIT_PER_DAY: count(20),
+    GLOBAL_PER_MINUTE: count(12),
+    GLOBAL_DAILY_CAP: count(400),
+    // Built client to serve in production (set in the Docker image); unset in dev.
+    STATIC_DIR: z.string().min(1).optional(),
+  })
+  // The default model only makes sense for the default provider: with another one, a
+  // missing LLM_MODEL would boot fine and then fail every request (D21: fail at boot).
+  .refine((e) => e.LLM_MODEL !== undefined || e.LLM_PROVIDER === 'google', {
+    path: ['LLM_MODEL'],
+    message: 'Required when LLM_PROVIDER is not "google"',
+  })
+
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite'
 
 export type LlmProvider = z.infer<typeof EnvSchema>['LLM_PROVIDER']
 
@@ -48,7 +57,11 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     port: e.PORT,
     staticDir: e.STATIC_DIR,
     trustProxy: e.TRUST_PROXY,
-    llm: { provider: e.LLM_PROVIDER, model: e.LLM_MODEL, timeoutMs: e.LLM_TIMEOUT_MS },
+    llm: {
+      provider: e.LLM_PROVIDER,
+      model: e.LLM_MODEL ?? DEFAULT_MODEL,
+      timeoutMs: e.LLM_TIMEOUT_MS,
+    },
     rateLimit: {
       perMinute: e.RATE_LIMIT_PER_MINUTE,
       perDay: e.RATE_LIMIT_PER_DAY,

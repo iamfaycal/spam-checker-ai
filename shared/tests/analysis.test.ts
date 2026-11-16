@@ -71,6 +71,15 @@ describe('RewriteRequestSchema', () => {
       false,
     ))
 
+  it('trims suggestions and rejects whitespace-only ones', () => {
+    expect(
+      RewriteRequestSchema.parse({ ...valid, suggestions: [' a ', 'b', 'c'] }).suggestions,
+    ).toEqual(['a', 'b', 'c'])
+    expect(
+      RewriteRequestSchema.safeParse({ ...valid, suggestions: [' ', '\n', '\t'] }).success,
+    ).toBe(false)
+  })
+
   it('rejects a missing suggestions field', () =>
     expect(RewriteRequestSchema.safeParse({ text: 'Hello' }).success).toBe(false))
 

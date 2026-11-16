@@ -113,6 +113,15 @@ describe('errorMessage', () => {
     expect(errorMessage(new ApiError(code, retry))).toBe(message),
   )
 
+  it.each([
+    [42, 'Too many AI requests — try again in 42s.'],
+    [150, 'Too many AI requests — try again in 3 min.'],
+    [3600, 'Too many AI requests — try again in 1 h.'],
+    [84213, 'Too many AI requests — try again in 23 h 24 min.'],
+  ])('formats a %is wait for people, not as raw seconds', (seconds, message) =>
+    expect(errorMessage(new ApiError('RATE_LIMITED', seconds))).toBe(message),
+  )
+
   it('names the action that failed', () =>
     expect(errorMessage(new ApiError('LLM_TIMEOUT'), 'rewrite')).toBe(
       "The AI couldn't rewrite this email. Try again.",

@@ -1,6 +1,8 @@
 import {
+  APICallError,
   JSONParseError,
   NoObjectGeneratedError,
+  NoOutputGeneratedError,
   Output,
   TypeValidationError,
   generateText,
@@ -42,18 +44,28 @@ export function createLlmAnalyzer(opts: { model: LanguageModel; timeoutMs: numbe
     const timeout = AbortSignal.timeout(opts.timeoutMs)
     const abortSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
 
-    let output: unknown
-    try {
+    const call = async () => {
       const result = await generateText({
         model: opts.model,
         instructions,
         prompt,
         output: Output.object({ schema }),
         temperature: 0.3,
-        maxRetries: 1,
+        maxRetries: 0, // retries are decided below: the SDK would also retry a quota 429
         abortSignal,
       })
-      output = result.output
+      return result.output
+    }
+
+    let output: unknown
+    try {
+      try {
+        output = await call()
+      } catch (error) {
+        // One retry for a passing server or network error; never for a 429 (D22).
+        if (!isTransient(error) || abortSignal.aborted) throw error
+        output = await call()
+      }
     } catch (error) {
       throw classify(error, timeout, signal)
     }
@@ -77,12 +89,18 @@ export function createLlmAnalyzer(opts: { model: LanguageModel; timeoutMs: numbe
   }
 }
 
+/** A failure worth one retry: 5xx or network. A 429 is the shared quota: retrying only wastes it. */
+function isTransient(error: unknown): boolean {
+  return APICallError.isInstance(error) && error.isRetryable && error.statusCode !== 429
+}
+
 function classify(error: unknown, timeout: AbortSignal, caller?: AbortSignal): unknown {
   // The caller gave up (visitor closed the tab): not a failure to report, pass it through.
   if (caller?.aborted && !timeout.aborted) return error
   if (timeout.aborted) return new AnalyzerError('timeout', { cause: error })
   if (
     NoObjectGeneratedError.isInstance(error) ||
+    NoOutputGeneratedError.isInstance(error) || // empty or safety-filtered answer
     TypeValidationError.isInstance(error) ||
     JSONParseError.isInstance(error)
   ) {
