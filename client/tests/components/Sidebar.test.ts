@@ -91,6 +91,44 @@ describe('App', () => {
     const analyze = wrapper.findAll('button').find((b) => b.text().includes('Analyze with AI'))
     expect(analyze?.attributes('disabled')).toBeDefined()
   })
+
+  it('rewrites the email with the suggestions, then Undo brings the original back', async () => {
+    const analysis = {
+      summary: 'Likely spam.',
+      riskLevel: 'high',
+      suggestions: ['Use their name', 'Drop ASAP', 'Say who you are'],
+    }
+    const rewritten = 'Hello Marie,\n\nsee you tomorrow.'
+    const fetchMock = vi.fn<typeof fetch>(async (url) =>
+      String(url) === '/api/rewrite'
+        ? new Response(JSON.stringify({ rewrittenText: rewritten }))
+        : new Response(JSON.stringify(analysis)),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(App)
+    const original = wrapper.get('textarea').element.value
+    const click = async (label: string) => {
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes(label))
+        ?.trigger('click')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    await click('Analyze with AI')
+    await click('Rewrite with AI')
+
+    expect(wrapper.get('textarea').element.value).toBe(rewritten)
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)).suggestions).toEqual(
+      analysis.suggestions,
+    )
+    expect(wrapper.get('.score--great').text()).toBe('Great')
+    expect(wrapper.text()).toContain('Re-analyze')
+
+    await click('Undo')
+    expect(wrapper.get('textarea').element.value).toBe(original)
+    expect(wrapper.get('.score--poor').text()).toBe('Poor')
+  })
 })
 
 afterEach(() => vi.unstubAllGlobals())

@@ -39,3 +39,10 @@ describe('EmailEditor', () => {
     expect(wrapper.get('.editor__backdrop').element.scrollTop).toBe(120)
   })
 })
+
+describe('EmailEditor (read-only)', () => {
+  it('can be made read-only, e.g. while the AI rewrites the text', () => {
+    const wrapper = mount(EmailEditor, { props: { modelValue: 'Hi', hits: [], readonly: true } })
+    expect(wrapper.get('textarea').attributes('readonly')).toBeDefined()
+  })
+})

@@ -19,7 +19,8 @@ function appWith(rateLimit: Partial<Config['rateLimit']> = {}) {
     rateLimit: { perMinute: 2, perDay: 3, globalPerMinute: 10, globalDailyCap: 4, ...rateLimit },
   }
   const analyze = jest.fn(async () => RESULT)
-  return { app: createApp({ analyzer: { analyze }, config }), analyze }
+  const rewrite = jest.fn(async () => ({ rewrittenText: 'Hi' }))
+  return { app: createApp({ analyzer: { analyze, rewrite }, config }), analyze, rewrite }
 }
 
 /** As Traefik would forward it: the proxy appends the address it saw last. */
@@ -136,5 +137,30 @@ describe('health probe', () => {
     for (let i = 0; i < 10; i++) {
       await request(app).get('/api/health').set('X-Forwarded-For', '1.1.1.1').expect(200)
     }
+  })
+})
+
+describe('one budget for analyze and rewrite', () => {
+  const rewriteFrom = (app: ReturnType<typeof appWith>['app'], xForwardedFor: string) =>
+    request(app)
+      .post('/api/rewrite')
+      .set('X-Forwarded-For', xForwardedFor)
+      .send({ text: 'Hello', suggestions: ['a', 'b', 'c'] })
+
+  it('counts both routes in the same per-IP bucket', async () => {
+    const { app } = appWith({ perMinute: 2 })
+    await analyzeFrom(app, '1.1.1.1').expect(200)
+    await rewriteFrom(app, '1.1.1.1').expect(200)
+    expect((await rewriteFrom(app, '1.1.1.1')).status).toBe(429)
+    expect((await analyzeFrom(app, '1.1.1.1')).status).toBe(429)
+  })
+
+  it('counts both routes against the same global cap', async () => {
+    const { app } = appWith({ globalDailyCap: 2 })
+    await analyzeFrom(app, '1.1.1.1').expect(200)
+    await rewriteFrom(app, '2.2.2.2').expect(200)
+    const res = await rewriteFrom(app, '3.3.3.3')
+    expect(res.status).toBe(503)
+    expect(res.body.error.code).toBe('DAILY_CAP_REACHED')
   })
 })

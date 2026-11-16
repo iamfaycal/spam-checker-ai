@@ -4,7 +4,12 @@ import { MockLanguageModelV4 } from 'ai/test'
 import type { AnalysisResult } from '@spam-checker/shared'
 import { createLlmAnalyzer } from '../src/analysis/analyzer.js'
 import { AnalyzerError } from '../src/analysis/errors.js'
-import { SYSTEM_PROMPT, buildUserPrompt } from '../src/analysis/prompt.js'
+import {
+  REWRITE_SYSTEM_PROMPT,
+  SYSTEM_PROMPT,
+  buildRewritePrompt,
+  buildUserPrompt,
+} from '../src/analysis/prompt.js'
 
 const VALID: AnalysisResult = {
   summary: 'High spam risk: urgency and money promises.',
@@ -126,5 +131,39 @@ describe('createLlmAnalyzer', () => {
     const error = await errorOf(pending)
     expect(error).not.toBeInstanceOf(AnalyzerError)
     expect(error).toMatchObject({ name: 'AbortError' })
+  })
+})
+
+describe('createLlmAnalyzer().rewrite', () => {
+  const SUGGESTIONS = ['Use their name', 'Drop "ASAP"', 'Say who you are']
+
+  it('returns the rewritten text', async () => {
+    const model = modelReplying(JSON.stringify({ rewrittenText: 'Hi Marie, ...' }))
+    await expect(analyzerFor(model).rewrite('Dear friend', SUGGESTIONS)).resolves.toEqual({
+      rewrittenText: 'Hi Marie, ...',
+    })
+  })
+
+  it('sends the rewrite prompt and the email with its suggestions', async () => {
+    const model = modelReplying(JSON.stringify({ rewrittenText: 'ok' }))
+    await analyzerFor(model).rewrite('Dear friend', SUGGESTIONS)
+    expect(model.doGenerateCalls[0]?.prompt).toEqual([
+      { role: 'system', content: REWRITE_SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: [{ type: 'text', text: buildRewritePrompt('Dear friend', SUGGESTIONS) }],
+      },
+    ])
+  })
+
+  it('rejects an empty rewrite as bad_output', async () => {
+    const model = modelReplying(JSON.stringify({ rewrittenText: '' }))
+    const error = await errorOf(analyzerFor(model).rewrite('Dear friend', SUGGESTIONS))
+    expect(error).toMatchObject({ kind: 'bad_output' })
+  })
+
+  it('maps failures like analyze does (same core)', async () => {
+    const error = await errorOf(analyzerFor(modelHanging(), 50).rewrite('x', SUGGESTIONS))
+    expect(error).toMatchObject({ kind: 'timeout' })
   })
 })

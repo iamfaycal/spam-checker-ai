@@ -8,7 +8,7 @@ import type { SpamHit } from '../lib/spam-check'
  * The user types in the real textarea (caret, paste, undo all native); the backdrop
  * renders the same text, invisible, with coloured <mark>s behind the spam words.
  */
-const props = defineProps<{ hits: readonly SpamHit[] }>()
+const props = defineProps<{ hits: readonly SpamHit[]; readonly?: boolean }>()
 const text = defineModel<string>({ required: true })
 
 const html = computed(() => toHighlightedHtml(text.value, props.hits))
@@ -29,6 +29,7 @@ function syncScroll(event: Event) {
     <div ref="backdrop" class="editor__backdrop" aria-hidden="true" v-html="html" />
     <textarea
       v-model="text"
+      :readonly="readonly"
       class="editor__input"
       aria-label="Email message"
       spellcheck="false"
@@ -79,6 +80,10 @@ function syncScroll(event: Event) {
   background: transparent;
   color: var(--text);
   outline: none;
+}
+
+.editor__input:read-only {
+  cursor: progress;
 }
 
 .editor__input:focus-visible {

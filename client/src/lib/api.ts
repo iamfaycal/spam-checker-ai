@@ -2,8 +2,10 @@ import { z } from 'zod'
 import {
   AnalysisResultSchema,
   ERROR_CODES,
+  RewriteResultSchema,
   type AnalysisResult,
   type ErrorCode,
+  type RewriteResult,
 } from '@spam-checker/shared'
 
 export type ApiErrorCode = ErrorCode | 'NETWORK'
@@ -38,17 +40,22 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 /**
- * POST /api/analyze. Resolves with an analysis that is valid by the shared schema,
+ * POSTs JSON to one of our LLM routes. Resolves with a body that is valid by `schema`,
  * or rejects with an ApiError. A deliberate abort is passed through as an AbortError,
  * so the caller can tell "replaced by a newer request" from a real failure.
  */
-export async function analyzeEmail(text: string, signal?: AbortSignal): Promise<AnalysisResult> {
+async function postJson<S extends z.ZodType>(
+  path: string,
+  payload: unknown,
+  schema: S,
+  signal?: AbortSignal,
+): Promise<z.infer<S>> {
   let response: Response
   try {
-    response = await fetch('/api/analyze', {
+    response = await fetch(path, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(payload),
       signal,
     })
   } catch (error) {
@@ -59,7 +66,7 @@ export async function analyzeEmail(text: string, signal?: AbortSignal): Promise<
   const body = await readJson(response)
   if (response.ok) {
     // Trust nothing: the same schema the server used guards what reaches the UI.
-    const parsed = AnalysisResultSchema.safeParse(body)
+    const parsed = schema.safeParse(body)
     if (!parsed.success) throw new ApiError('LLM_BAD_OUTPUT')
     return parsed.data
   }
@@ -69,13 +76,28 @@ export async function analyzeEmail(text: string, signal?: AbortSignal): Promise<
   throw new ApiError(parsed.success ? parsed.data.error.code : 'INTERNAL', retryAfter(response))
 }
 
-/** User-facing copy for each code. The switch is exhaustive: a new code won't compile without one. */
-export function errorMessage(error: ApiError): string {
+export function analyzeEmail(text: string, signal?: AbortSignal): Promise<AnalysisResult> {
+  return postJson('/api/analyze', { text }, AnalysisResultSchema, signal)
+}
+
+export function rewriteEmail(
+  text: string,
+  suggestions: readonly string[],
+  signal?: AbortSignal,
+): Promise<RewriteResult> {
+  return postJson('/api/rewrite', { text, suggestions }, RewriteResultSchema, signal)
+}
+
+/**
+ * User-facing copy for each code. The switch is exhaustive: a new code won't compile
+ * without one. Analyze and rewrite share one rate-limit budget (D14), hence "AI requests".
+ */
+export function errorMessage(error: ApiError, action: 'analyze' | 'rewrite' = 'analyze'): string {
   switch (error.code) {
     case 'RATE_LIMITED':
       return error.retryAfterSeconds
-        ? `Too many analyses — try again in ${error.retryAfterSeconds}s.`
-        : 'Too many analyses — try again shortly.'
+        ? `Too many AI requests — try again in ${error.retryAfterSeconds}s.`
+        : 'Too many AI requests — try again shortly.'
     case 'DAILY_CAP_REACHED':
       return "The demo's daily AI quota is used up. Try again tomorrow."
     case 'INVALID_INPUT':
@@ -84,7 +106,7 @@ export function errorMessage(error: ApiError): string {
     case 'LLM_TIMEOUT':
     case 'LLM_BAD_OUTPUT':
     case 'LLM_UNAVAILABLE':
-      return "The AI couldn't analyze this email. Try again."
+      return `The AI couldn't ${action} this email. Try again.`
     case 'NETWORK':
       return 'Network error — check your connection.'
     case 'NOT_FOUND':
