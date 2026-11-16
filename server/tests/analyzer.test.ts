@@ -54,8 +54,9 @@ function modelThrowing(error: unknown) {
   })
 }
 
-const analyzerFor = (model: MockLanguageModelV4, timeoutMs = 1000) =>
-  createLlmAnalyzer({ model, timeoutMs })
+// No pause before the retry by default, so tests stay fast; the pause has its own tests.
+const analyzerFor = (model: MockLanguageModelV4, timeoutMs = 1000, retryDelayMs = 0) =>
+  createLlmAnalyzer({ model, timeoutMs, retryDelayMs })
 
 async function errorOf(promise: Promise<unknown>): Promise<unknown> {
   try {
@@ -157,6 +158,39 @@ describe('createLlmAnalyzer', () => {
     expect(calls).toBe(2)
   })
 
+  it('pauses before retrying a server error', async () => {
+    const calledAt: number[] = []
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        calledAt.push(Date.now())
+        throw new APICallError({
+          message: 'busy',
+          url: 'u',
+          requestBodyValues: {},
+          statusCode: 503,
+        })
+      },
+    })
+    await errorOf(analyzerFor(model, 15_000, 200).analyze('x'))
+    expect(calledAt).toHaveLength(2)
+    expect((calledAt[1] ?? 0) - (calledAt[0] ?? 0)).toBeGreaterThanOrEqual(190)
+  })
+
+  it('stops pausing as soon as the timeout fires', async () => {
+    const overloaded = new APICallError({
+      message: 'busy',
+      url: 'u',
+      requestBodyValues: {},
+      statusCode: 503,
+    })
+    const model = modelThrowing(overloaded)
+    const started = Date.now()
+    const error = await errorOf(analyzerFor(model, 100, 5_000).analyze('x'))
+    expect(error).toMatchObject({ kind: 'timeout' })
+    expect(Date.now() - started).toBeLessThan(1000)
+    expect(model.doGenerateCalls).toHaveLength(1)
+  })
+
   it('reports an empty or safety-filtered answer as bad_output, not provider', async () => {
     const model = new MockLanguageModelV4({
       doGenerate: async () => ({
@@ -184,29 +218,53 @@ describe('createLlmAnalyzer', () => {
 
 describe('createLlmAnalyzer().rewrite', () => {
   const SUGGESTIONS = ['Use their name', 'Drop "ASAP"', 'Say who you are']
+  const EMAIL = 'Dear friend,\n\nPlease answer ASAP.'
 
-  it('returns the rewritten text', async () => {
-    const model = modelReplying(JSON.stringify({ rewrittenText: 'Hi Marie, ...' }))
-    await expect(analyzerFor(model).rewrite('Dear friend', SUGGESTIONS)).resolves.toEqual({
-      rewrittenText: 'Hi Marie, ...',
+  it('joins the rewritten paragraphs with blank lines', async () => {
+    const model = modelReplying(
+      JSON.stringify({ paragraphs: ['Hi Marie,', 'Could you reply this week?'] }),
+    )
+    await expect(analyzerFor(model).rewrite(EMAIL, SUGGESTIONS)).resolves.toEqual({
+      rewrittenText: 'Hi Marie,\n\nCould you reply this week?',
+    })
+  })
+
+  it('asks the model for exactly as many paragraphs as the email has', async () => {
+    const model = modelReplying(JSON.stringify({ paragraphs: ['Hi Marie,', 'Body.'] }))
+    await analyzerFor(model).rewrite(EMAIL, SUGGESTIONS)
+    const call = model.doGenerateCalls[0]
+    expect(call?.responseFormat).toMatchObject({
+      type: 'json',
+      schema: { properties: { paragraphs: { minItems: 2, maxItems: 2 } } },
     })
   })
 
   it('sends the rewrite prompt and the email with its suggestions', async () => {
-    const model = modelReplying(JSON.stringify({ rewrittenText: 'ok' }))
-    await analyzerFor(model).rewrite('Dear friend', SUGGESTIONS)
+    const model = modelReplying(JSON.stringify({ paragraphs: ['a', 'b'] }))
+    await analyzerFor(model).rewrite(EMAIL, SUGGESTIONS)
     expect(model.doGenerateCalls[0]?.prompt).toEqual([
       { role: 'system', content: REWRITE_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [{ type: 'text', text: buildRewritePrompt('Dear friend', SUGGESTIONS) }],
-      },
+      { role: 'user', content: [{ type: 'text', text: buildRewritePrompt(EMAIL, SUGGESTIONS) }] },
     ])
   })
 
-  it('rejects an empty rewrite as bad_output', async () => {
-    const model = modelReplying(JSON.stringify({ rewrittenText: '' }))
-    const error = await errorOf(analyzerFor(model).rewrite('Dear friend', SUGGESTIONS))
+  it('rejects merged paragraphs as bad_output instead of returning them', async () => {
+    const model = modelReplying(JSON.stringify({ paragraphs: ['Hi Marie, could you reply?'] }))
+    const error = await errorOf(analyzerFor(model).rewrite(EMAIL, SUGGESTIONS))
+    expect(error).toMatchObject({ kind: 'bad_output' })
+  })
+
+  it('rejects an empty paragraph as bad_output', async () => {
+    const model = modelReplying(JSON.stringify({ paragraphs: ['Hi', ''] }))
+    const error = await errorOf(analyzerFor(model).rewrite(EMAIL, SUGGESTIONS))
+    expect(error).toMatchObject({ kind: 'bad_output' })
+  })
+
+  it('rejects a rewrite longer than 5,000 characters once joined', async () => {
+    const model = modelReplying(
+      JSON.stringify({ paragraphs: ['a'.repeat(3000), 'b'.repeat(3000)] }),
+    )
+    const error = await errorOf(analyzerFor(model).rewrite(EMAIL, SUGGESTIONS))
     expect(error).toMatchObject({ kind: 'bad_output' })
   })
 

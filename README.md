@@ -132,7 +132,7 @@ npm run lint      # ESLint + Prettier
 npm run typecheck # tsc / vue-tsc
 ```
 
-There are **214 tests**: Vitest for `shared` and `client`, Jest + Supertest for `server`.
+There are **223 tests**: Vitest for `shared` and `client`, Jest + Supertest for `server`.
 
 - **Server:**
   - the LLM layer runs on the AI SDK's mock model, with no network;

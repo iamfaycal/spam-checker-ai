@@ -8,7 +8,8 @@ import {
   generateText,
   type LanguageModel,
 } from 'ai'
-import type { z } from 'zod'
+import { setTimeout as sleep } from 'node:timers/promises'
+import { z } from 'zod'
 import {
   AnalysisResultSchema,
   RewriteResultSchema,
@@ -21,6 +22,7 @@ import {
   SYSTEM_PROMPT,
   buildRewritePrompt,
   buildUserPrompt,
+  splitParagraphs,
 } from './prompt.js'
 
 /** The port the HTTP layer depends on (D3). Tests swap in a fake; main.ts wires the LLM. */
@@ -29,7 +31,27 @@ export interface Analyzer {
   rewrite(text: string, suggestions: string[], signal?: AbortSignal): Promise<RewriteResult>
 }
 
-export function createLlmAnalyzer(opts: { model: LanguageModel; timeoutMs: number }): Analyzer {
+/**
+ * What the model returns for a rewrite: one item per paragraph of the original, so the
+ * paragraph structure is part of the schema rather than a request it can ignore (D25).
+ */
+function rewriteOutputSchema(paragraphCount: number) {
+  return z.object({
+    paragraphs: z
+      .array(z.string().trim().min(1).describe('One paragraph of the rewritten email.'))
+      .length(paragraphCount)
+      .describe(`Exactly ${paragraphCount} paragraphs, in the order of the original email.`),
+  })
+}
+
+export function createLlmAnalyzer(opts: {
+  model: LanguageModel
+  timeoutMs: number
+  /** Pause before the single retry of a server or network error (default 1 s). */
+  retryDelayMs?: number
+}): Analyzer {
+  const retryDelayMs = opts.retryDelayMs ?? 1000
+
   /**
    * One structured LLM call, shared by analyze and rewrite so they can't drift apart:
    * the timeout, the error classification (D22) and the final schema guard.
@@ -64,6 +86,9 @@ export function createLlmAnalyzer(opts: { model: LanguageModel; timeoutMs: numbe
       } catch (error) {
         // One retry for a passing server or network error; never for a 429 (D22).
         if (!isTransient(error) || abortSignal.aborted) throw error
+        // A short pause gives an overloaded model a chance to recover. It is abortable:
+        // the timeout or the visitor leaving ends it at once (and is classified below).
+        await sleep(retryDelayMs, undefined, { signal: abortSignal })
         output = await call()
       }
     } catch (error) {
@@ -79,13 +104,21 @@ export function createLlmAnalyzer(opts: { model: LanguageModel; timeoutMs: numbe
   return {
     analyze: (text, signal) =>
       generate(AnalysisResultSchema, SYSTEM_PROMPT, buildUserPrompt(text), signal),
-    rewrite: (text, suggestions, signal) =>
-      generate(
-        RewriteResultSchema,
+    rewrite: async (text, suggestions, signal) => {
+      const paragraphCount = splitParagraphs(text).length
+      const { paragraphs } = await generate(
+        rewriteOutputSchema(paragraphCount),
         REWRITE_SYSTEM_PROMPT,
         buildRewritePrompt(text, suggestions),
         signal,
-      ),
+      )
+      // The API contract is still one text, rebuilt with the original's blank-line breaks.
+      const rewritten = RewriteResultSchema.safeParse({ rewrittenText: paragraphs.join('\n\n') })
+      if (!rewritten.success) {
+        throw new AnalyzerError('bad_output', { cause: rewritten.error })
+      }
+      return rewritten.data
+    },
   }
 }
 
