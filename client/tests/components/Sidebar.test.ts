@@ -129,6 +129,48 @@ describe('App', () => {
     expect(wrapper.get('textarea').element.value).toBe(original)
     expect(wrapper.get('.score--poor').text()).toBe('Poor')
   })
+
+  it('keeps Undo reachable when the re-analysis of a rewrite fails', async () => {
+    const analysis = {
+      summary: 'Likely spam.',
+      riskLevel: 'high',
+      suggestions: ['Use their name', 'Drop ASAP', 'Say who you are'],
+    }
+    let analyses = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url) => {
+        if (String(url) === '/api/rewrite') {
+          return new Response(
+            JSON.stringify({ rewrittenText: 'Hello Marie,\n\nsee you tomorrow.' }),
+          )
+        }
+        analyses += 1
+        return analyses === 1
+          ? new Response(JSON.stringify(analysis))
+          : new Response(JSON.stringify({ error: { code: 'DAILY_CAP_REACHED', message: 'x' } }), {
+              status: 503,
+            })
+      }),
+    )
+    const wrapper = mount(App)
+    const original = wrapper.get('textarea').element.value
+    const click = async (label: string) => {
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes(label))
+        ?.trigger('click')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    await click('Analyze with AI')
+    await click('Rewrite with AI')
+    await click('Re-analyze')
+    expect(wrapper.text()).toContain('daily AI quota is used up')
+
+    await click('Undo rewrite')
+    expect(wrapper.get('textarea').element.value).toBe(original)
+  })
 })
 
 afterEach(() => vi.unstubAllGlobals())

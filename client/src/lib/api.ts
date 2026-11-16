@@ -88,6 +88,16 @@ export function rewriteEmail(
   return postJson('/api/rewrite', { text, suggestions }, RewriteResultSchema, signal)
 }
 
+/** A wait for people: "42s", "3 min", "23 h 24 min" (a daily limit can be most of a day). */
+export function formatWait(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.ceil(seconds / 60)
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest ? `${hours} h ${rest} min` : `${hours} h`
+}
+
 /**
  * User-facing copy for each code. The switch is exhaustive: a new code won't compile
  * without one. Analyze and rewrite share one rate-limit budget (D14), hence "AI requests".
@@ -96,7 +106,7 @@ export function errorMessage(error: ApiError, action: 'analyze' | 'rewrite' = 'a
   switch (error.code) {
     case 'RATE_LIMITED':
       return error.retryAfterSeconds
-        ? `Too many AI requests — try again in ${error.retryAfterSeconds}s.`
+        ? `Too many AI requests — try again in ${formatWait(error.retryAfterSeconds)}.`
         : 'Too many AI requests — try again shortly.'
     case 'DAILY_CAP_REACHED':
       return "The demo's daily AI quota is used up. Try again tomorrow."

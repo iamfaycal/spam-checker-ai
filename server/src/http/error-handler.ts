@@ -15,11 +15,15 @@ const ANALYZER_ERRORS: Record<AnalyzerErrorKind, [number, ErrorCode, string]> = 
   provider: [503, 'LLM_UNAVAILABLE', 'The AI service is unavailable right now.'],
 }
 
-/** Errors raised by express.json() carry a `type`, e.g. 'entity.too.large' or 'entity.parse.failed'. */
-function isBodyParserError(err: unknown): err is { type: string } {
-  return (
-    typeof err === 'object' && err !== null && typeof (err as { type?: unknown }).type === 'string'
-  )
+/**
+ * Errors raised by express.json() carry a `type` ('entity.too.large', 'entity.parse.failed',
+ * 'charset.unsupported'...) and a 4xx `status`. Requiring both keeps an unrelated error that
+ * happens to have a `type` field from being reported as a bad request.
+ */
+function isBodyParserError(err: unknown): err is { type: string; status: number } {
+  if (typeof err !== 'object' || err === null) return false
+  const { type, status } = err as { type?: unknown; status?: unknown }
+  return typeof type === 'string' && typeof status === 'number' && status >= 400 && status < 500
 }
 
 // Express recognises an error handler by its 4 parameters.

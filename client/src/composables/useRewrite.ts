@@ -4,8 +4,8 @@ import { ApiError, rewriteEmail } from '../lib/api'
 export type RewriteStatus = 'idle' | 'loading' | 'error'
 
 /**
- * Rewrite with AI (D15): replaces `text` with the rewrite, keeping the previous text
- * for a one-click Undo. Undo is offered only while the editor still holds exactly the
+ * Rewrite with AI (D15): replaces `text` with the rewrite, keeping the original text
+ * for a one-click Undo (after several rewrites in a row, still the original). Undo is offered only while the editor still holds exactly the
  * rewritten text: any edit by hand makes it go away, with no extra bookkeeping.
  */
 export function useRewrite(text: Ref<string>) {
@@ -31,7 +31,8 @@ export function useRewrite(text: Ref<string>) {
       status.value = 'idle'
       // Never overwrite what the user typed while we were waiting.
       if (text.value !== sent) return
-      before.value = sent
+      // Rewriting a rewrite keeps the very first text, so Undo always returns to the original.
+      if (!canUndo.value) before.value = sent
       after.value = rewrittenText
       text.value = rewrittenText
     } catch (e) {

@@ -24,6 +24,7 @@ export const SuggestionsSchema = z
   .array(
     z
       .string()
+      .trim() // a suggestion of only spaces is no suggestion (they come back from the client)
       .min(1)
       .max(MAX_SUGGESTION_LENGTH)
       .describe('One concrete improvement, starting with a verb, tied to the text.'),

@@ -1,19 +1,12 @@
 import { resolve } from 'node:path'
 import express, { type Express } from 'express'
 import helmet from 'helmet'
-import {
-  AnalyzeRequestSchema,
-  MAX_TEXT_LENGTH,
-  RewriteRequestSchema,
-  type AnalyzeRequest,
-  type RewriteRequest,
-} from '@spam-checker/shared'
+import { AnalyzeRequestSchema, MAX_TEXT_LENGTH, RewriteRequestSchema } from '@spam-checker/shared'
 import type { Analyzer } from './analysis/analyzer.js'
 import type { Config } from './config.js'
 import { errorHandler, sendError } from './http/error-handler.js'
-import { llmRoute } from './http/llm-route.js'
+import { llmEndpoint } from './http/llm-route.js'
 import { createRateLimiters } from './http/rate-limit.js'
-import { validateBody } from './http/validate-body.js'
 
 export interface AppDeps {
   analyzer: Analyzer
@@ -42,22 +35,20 @@ export function createApp(deps: AppDeps): Express {
   api.use(express.json({ limit: '20kb' }))
   api.post(
     '/analyze',
-    validateBody(
+    ...llmEndpoint(
       AnalyzeRequestSchema,
       `Send { "text": "..." } with 1 to ${MAX_TEXT_LENGTH} characters.`,
+      limits.global,
+      (body, signal) => deps.analyzer.analyze(body.text, signal),
     ),
-    ...limits.global, // after validation: only requests that reach the LLM spend the shared quota
-    llmRoute<AnalyzeRequest>((body, signal) => deps.analyzer.analyze(body.text, signal)),
   )
   api.post(
     '/rewrite',
-    validateBody(
+    ...llmEndpoint(
       RewriteRequestSchema,
       `Send { "text": "...", "suggestions": [3 strings] } with 1 to ${MAX_TEXT_LENGTH} characters of text.`,
-    ),
-    ...limits.global,
-    llmRoute<RewriteRequest>((body, signal) =>
-      deps.analyzer.rewrite(body.text, body.suggestions, signal),
+      limits.global,
+      (body, signal) => deps.analyzer.rewrite(body.text, body.suggestions, signal),
     ),
   )
   // Anything else under /api: same error shape as every other API error (D11).

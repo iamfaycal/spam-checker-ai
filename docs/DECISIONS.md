@@ -41,7 +41,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
 - **Context:** cheap demo; measured free quota: 15 RPM, 250K TPM, 500 RPD per Cloud project.
 - **Decision:** `gemini-3.5-flash-lite` on a Cloud project used only for this demo.
 - **Alternatives:** paid tier (no data-usage caveat, costs money); bigger model (slower, unnecessary for short emails).
-- **Consequences:** Google may use free-tier inputs for training. This is stated in the README. Quota drives D6.
+- **Consequences:** Google may use free-tier inputs for training. This is stated in the README **and in the app**, under the Analyze button, where visitors actually decide to send their text. Quota drives D6.
 
 ## D6 — Four rate limiters, in-memory — accepted
 
@@ -94,7 +94,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
 
 ## D11 — Error contract — accepted
 
-- **Decision:** one body shape, `{ error: { code, message } }`.
+- **Decision:** one body shape, `{ error: { code, message } }`. A body-parser rejection is recognised by its `type` **and** a 4xx `status`, so no other error carrying a `type` field becomes a 400.
 
   | Condition                                  | Status | Code                                    |
   | ------------------------------------------ | ------ | --------------------------------------- |
@@ -141,6 +141,9 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - `canUndo` is derived: true only while the editor still holds exactly the rewritten text. Any hand edit hides Undo, with no extra bookkeeping. Undo stays offered after re-analyzing the rewrite.
   - The editor is read-only while a rewrite runs, and the composable refuses to apply a rewrite if the text changed meanwhile, so typed text is never overwritten.
   - Undo restores the original byte for byte (tested with whitespace, tabs and newlines).
+  - The Undo button is rendered outside the analysis states, so it stays reachable even when the re-analysis of a rewrite fails (for example, the daily cap is reached) or is still running. It is hidden only while a new rewrite runs.
+  - After several rewrites in a row, Undo still returns to the original: the first text is kept while the editor holds a rewrite.
+  - Rate-limited rewrites count down `Retry-After` like analyses, and Rewrite stays disabled until the wait is over. Waits are shown for people ("42s", "3 min", "23 h 24 min").
 
 ## D16 — Spam rules ported from the existing tool — accepted
 
@@ -170,6 +173,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - Three stages: build (all deps), deps (`npm ci --omit=dev` for server and shared only), and runtime (those deps + `shared/dist`, `server/dist`, `client/dist`). The image runs as `node`, with exec-form `CMD` so node receives `SIGTERM`. Checked: healthy, page + assets + SPA fallback, a live analysis, no CSP errors in a browser, and a clean stop in under 1 s.
   - The client's packages (`vue`, `zod`, `shared`) are **devDependencies**: Vite bundles them into static files at build time. As runtime deps, Vue's optional TypeScript peer leaked into the production install (TypeScript is about 23 MB). Moving them took the image from 227 to 198 MB.
   - CI builds the image and smoke-tests it (healthy, `/api/health`, the page) after the test job.
+  - **The image must be served over HTTPS.** helmet's default CSP includes `upgrade-insecure-requests`. On the first, plain-HTTP deploy (Coolify's sslip.io address), browsers fetched the JS and CSS over HTTPS, hit Traefik's self-signed certificate, and showed a blank page. Since the demo is HTTPS-only (Let's Encrypt), helmet's defaults are kept, and the README's deploy steps require HTTPS.
 
 ## D19 — Git workflow: feature branches + PRs, CI from day one — accepted
 
@@ -204,6 +208,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - API keys are not validated here, because each provider SDK reads its own variable.
 - **Alternatives:** reading `process.env` where it's used (failures surface late, defaults scattered); a config library (overkill for 9 variables).
 - **Consequences:**
+  - `LLM_MODEL` defaults to the Gemini model only with the default provider. With `LLM_PROVIDER=openai` or `anthropic`, a missing `LLM_MODEL` is a boot error, instead of a server that starts and then fails every request.
   - `loadConfig` takes the env as an argument, so tests never touch `process.env`.
   - A variable set to an empty string (`PORT=`) is an error, not the default. Leave it unset to use the default.
 
@@ -216,14 +221,15 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - **Bad output:** the SDK's `NoObjectGeneratedError`, `TypeValidationError` and `JSONParseError`. Then `AnalysisResultSchema` parses the result again as a final guard.
   - **Provider:** everything else, including the provider's own 429. That 429 means the shared quota ran out, not that this visitor sent too much.
   - **Caller abort:** re-thrown unchanged, not wrapped. Nobody is listening for the answer, so there is nothing to report. The route aborts its signal when the connection closes before the answer is sent, which also stops a paid LLM call, and then sends nothing.
-  - `temperature: 0.3` and `maxRetries: 1`.
+  - `temperature: 0.3`. One retry for a passing server or network error, done by the analyzer itself (`maxRetries: 0` in the SDK), **never for a 429**: a quota error fails fast.
+  - An empty or safety-filtered answer (`NoOutputGeneratedError`) is `bad_output` (502), not `provider`.
   - The error handler logs the kind and the underlying cause of every `AnalyzerError` on the server (for example a missing API key), and sends the visitor only the generic code and message.
 - **Alternatives:**
   - The SDK's own `timeout` option, which can't tell "too slow" from "visitor left".
   - Mapping a caller abort to `provider`, which would log a failure that never happened.
 - **Consequences:**
-  - A retryable provider error (5xx, 429) is retried once after about 2 s.
-  - For a quota 429, that retry is spent for nothing: one extra Google request, and about 2 s more before the visitor sees `503`.
+  - The SDK's `maxRetries` can't exclude a status code, so the retry lives in the analyzer. It's tested: a 429 makes 1 call, a 503 makes 2, and a 503 followed by a success resolves.
+  - A 5xx retry can make one global-cap slot cost two upstream requests. The caps (12/min, 400/day) leave headroom under Google's 15/500 for it.
 
 ## D23 — Spam engine: where we differ from the original tool — accepted
 

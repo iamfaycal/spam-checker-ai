@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { computed, useId } from 'vue'
 import type { AnalysisResult, RiskLevel } from '@spam-checker/shared'
 import type { AnalysisStatus } from '../composables/useAiAnalysis'
+import { useRetryCountdown } from '../composables/useCountdown'
 import type { RewriteStatus } from '../composables/useRewrite'
 import { ApiError, errorMessage } from '../lib/api'
 
@@ -28,38 +29,21 @@ const RISK_LABELS: Record<RiskLevel, string> = {
   low: 'Low risk',
 }
 
-// Rate limited: count down from Retry-After, and only allow a retry once it's over.
-const secondsLeft = ref(0)
-let timer: ReturnType<typeof setInterval> | undefined
+// Rate limited: count down from Retry-After, and only allow a retry once it's over (D12).
+const analyzeWait = useRetryCountdown(() => props.error)
+const rewriteWait = useRetryCountdown(() => props.rewriteError)
 
-watch(
-  () => props.error,
-  (error) => {
-    clearInterval(timer)
-    secondsLeft.value = error?.code === 'RATE_LIMITED' ? (error.retryAfterSeconds ?? 0) : 0
-    if (secondsLeft.value > 0) {
-      timer = setInterval(() => {
-        secondsLeft.value -= 1
-        if (secondsLeft.value <= 0) clearInterval(timer)
-      }, 1000)
-    }
-  },
-  { immediate: true },
-)
-onBeforeUnmount(() => clearInterval(timer))
-
-const message = computed(() => {
-  const error = props.error
+/** The message for an error, with a rate limit's wait shown live as it ticks down. */
+function liveMessage(error: ApiError | null, secondsLeft: number, action: 'analyze' | 'rewrite') {
   if (!error) return ''
-  if (error.code !== 'RATE_LIMITED' || !error.retryAfterSeconds) return errorMessage(error)
-  return secondsLeft.value > 0
-    ? errorMessage(new ApiError('RATE_LIMITED', secondsLeft.value))
+  if (error.code !== 'RATE_LIMITED' || !error.retryAfterSeconds) return errorMessage(error, action)
+  return secondsLeft > 0
+    ? errorMessage(new ApiError('RATE_LIMITED', secondsLeft), action)
     : 'You can try again now.'
-})
+}
 
-const rewriteMessage = computed(() =>
-  props.rewriteError ? errorMessage(props.rewriteError, 'rewrite') : '',
-)
+const message = computed(() => liveMessage(props.error, analyzeWait.value, 'analyze'))
+const rewriteMessage = computed(() => liveMessage(props.rewriteError, rewriteWait.value, 'rewrite'))
 
 const canAnalyze = computed(() => !props.disabledReason)
 </script>
@@ -122,14 +106,6 @@ const canAnalyze = computed(() => !props.disabledReason)
         >
           Re-analyze
         </button>
-        <button
-          v-if="canUndo"
-          type="button"
-          class="btn btn--secondary btn--spaced"
-          @click="$emit('undo')"
-        >
-          Undo rewrite
-        </button>
       </template>
 
       <!-- Rewrite applies these suggestions, so it's only offered while they match the text. -->
@@ -137,7 +113,7 @@ const canAnalyze = computed(() => !props.disabledReason)
         <button
           type="button"
           class="btn btn--secondary"
-          :disabled="rewriteStatus === 'loading'"
+          :disabled="rewriteStatus === 'loading' || rewriteWait > 0"
           @click="$emit('rewrite')"
         >
           {{ rewriteStatus === 'loading' ? 'Rewriting…' : '✦ Rewrite with AI' }}
@@ -145,22 +121,13 @@ const canAnalyze = computed(() => !props.disabledReason)
         <p v-if="rewriteStatus === 'error'" class="ai-card__error ai-card__error--below">
           {{ rewriteMessage }}
         </p>
-        <!-- After re-analyzing a rewrite, the original can still be brought back. -->
-        <button
-          v-if="canUndo"
-          type="button"
-          class="btn btn--secondary btn--spaced"
-          @click="$emit('undo')"
-        >
-          Undo rewrite
-        </button>
       </template>
 
       <button
         v-else-if="status === 'error'"
         type="button"
         class="btn btn--primary"
-        :disabled="!canAnalyze || secondsLeft > 0"
+        :disabled="!canAnalyze || analyzeWait > 0"
         @click="$emit('analyze')"
       >
         Try again
@@ -169,7 +136,24 @@ const canAnalyze = computed(() => !props.disabledReason)
       <p v-if="disabledReason && status !== 'loading'" class="ai-card__hint">
         {{ disabledReason }}
       </p>
+
+      <!-- Whatever the analysis is doing, the original email stays one click away (D15).
+           Hidden only while a new rewrite runs: its answer would be dropped after spending quota. -->
+      <button
+        v-if="canUndo && rewriteStatus !== 'loading'"
+        type="button"
+        class="btn btn--secondary btn--spaced"
+        @click="$emit('undo')"
+      >
+        Undo rewrite
+      </button>
     </div>
+
+    <!-- The demo runs on Gemini's free tier (D5): say so where the text is sent, not only in the README. -->
+    <p class="ai-card__privacy">
+      Text sent to the AI goes to Google's Gemini free tier, which may use it to improve its
+      products. Don't paste confidential emails.
+    </p>
   </section>
 </template>
 
@@ -252,6 +236,13 @@ const canAnalyze = computed(() => !props.disabledReason)
 .ai-card__error--below {
   margin-top: 0.5rem;
   font-size: 0.825rem;
+}
+
+.ai-card__privacy {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted);
 }
 
 .ai-card__actions {
