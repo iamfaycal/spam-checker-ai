@@ -34,7 +34,7 @@ function llmRoute<Body>(
  * so junk doesn't spend them: D8), then call the LLM. `run` receives the schema's own type,
  * so a route can't be paired with the wrong schema without a compile error.
  */
-export function llmEndpoint<S extends z.ZodType>(
+export function llmEndpoint<S extends z.core.$ZodType>(
   schema: S,
   invalidMessage: string,
   guards: readonly RequestHandler[],

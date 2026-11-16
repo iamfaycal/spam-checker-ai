@@ -253,7 +253,12 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - A request the client aborted on purpose stays an `AbortError`. `useAiAnalysis` drops any outcome, answer or error, of a request that a newer one replaced (D12).
   - `errorMessage` is an exhaustive `switch`, so adding a code without copy fails the type check. It names the action that failed ("couldn't analyze" or "couldn't rewrite"). The rate-limit copy says "Too many AI requests", because analyze and rewrite share one budget. Codes the plan didn't list map to: `PAYLOAD_TOO_LARGE` → the input message; `NOT_FOUND` and `INTERNAL` → "Something went wrong. Try again."; `RATE_LIMITED` with no `Retry-After` → "try again shortly".
 - **Alternatives:** showing the server's `message` field (couples the UI to server wording, D11); mapping unknown bodies by HTTP status (guesses about responses we don't control).
-- **Consequences:** the client bundles zod, the cost of validating responses with the same schema as the server (D1). Measured: JS goes from 36.5 to 61.2 kB gzipped. `zod/mini` would cut that if it ever matters. Vite aliases `@spam-checker/shared` to its source, so the client never needs a prior build.
+- **Consequences:**
+  - The client bundles zod, the cost of validating responses with the same schema as the server (D1).
+  - **The shared contract and the client use `zod/mini`**, whose functional API tree-shakes, where classic zod ships whole. Measured: classic zod took the JS from 36.5 to 62.0 kB gzipped; with mini it's 45.3 kB (−16.7 kB, −27%).
+  - Same rules, different spelling: `.check(z.trim(), z.minLength(1), z.describe(...))` instead of chained methods. The AI SDK converts mini schemas to JSON Schema with their descriptions, and a test pins that exact JSON Schema.
+  - Server-only code (env config, the rewrite output schema) keeps classic zod, which reads better and never reaches the browser. Server helpers that receive shared schemas are typed `z.core.$ZodType`, which accepts both.
+  - An ESLint `no-restricted-imports` rule forbids `'zod'` in `client/` and `shared/src/`, so classic zod can't slip back into the bundle. Vite aliases `@spam-checker/shared` to its source, so the client never needs a prior build.
 
 ## D25 — Rewrite keeps the email's paragraphs by schema, not by request — accepted
 

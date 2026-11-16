@@ -1,4 +1,5 @@
-import { z } from 'zod'
+// zod/mini: tree-shakes, unlike classic zod, which would ship whole in the bundle (D24).
+import * as z from 'zod/mini'
 import {
   AnalysisResultSchema,
   ERROR_CODES,
@@ -44,7 +45,7 @@ async function readJson(response: Response): Promise<unknown> {
  * or rejects with an ApiError. A deliberate abort is passed through as an AbortError,
  * so the caller can tell "replaced by a newer request" from a real failure.
  */
-async function postJson<S extends z.ZodType>(
+async function postJson<S extends z.ZodMiniType>(
   path: string,
   payload: unknown,
   schema: S,
@@ -66,13 +67,13 @@ async function postJson<S extends z.ZodType>(
   const body = await readJson(response)
   if (response.ok) {
     // Trust nothing: the same schema the server used guards what reaches the UI.
-    const parsed = schema.safeParse(body)
+    const parsed = z.safeParse(schema, body)
     if (!parsed.success) throw new ApiError('LLM_BAD_OUTPUT')
     return parsed.data
   }
 
   // An error from our API has a code; anything else (e.g. a proxy's HTML 502) doesn't.
-  const parsed = ApiErrorBodySchema.safeParse(body)
+  const parsed = z.safeParse(ApiErrorBodySchema, body)
   throw new ApiError(parsed.success ? parsed.data.error.code : 'INTERNAL', retryAfter(response))
 }
 
