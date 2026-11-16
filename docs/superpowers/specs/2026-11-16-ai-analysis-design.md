@@ -45,7 +45,8 @@ Brief (client's words):
 - Rewrite has its own route (`/api/rewrite`) rather than a `mode` flag: one schema per route stays simpler to validate and test. Both routes share one rate-limit budget.
 - Analysis triggered by an explicit "Analyze with AI" button, not on input. Card flags the result as outdated when the text changes.
 - Summary and suggestions written in the email's own language.
-- Limits: text 1–5,000 chars; 5 req/min and 50 req/day per IP; 1,000 req/day global (free tier ≈1,500 RPD, unverified); LLM timeout 15 s. All env-configurable.
+- Limits: text 1–5,000 chars; per IP 5 req/min and 20 req/day; global 12 req/min and 400 req/day; LLM timeout 15 s. All env-configurable.
+- Gemini free-tier quota, measured in AI Studio on 2026-11-16: 15 RPM / 250K TPM / 500 RPD per Cloud project. Global caps sit below it. Analyze and rewrite share it. Use a dedicated project for the demo.
 - `trust proxy` = 1 hop (Coolify's Traefik), env-configurable.
 - Express serves the built client in production → one image, one domain, no CORS.
 - Free-tier data may be used by Google for training: stated in README.

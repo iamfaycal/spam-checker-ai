@@ -15,7 +15,8 @@
 - Feature routes: `POST /api/analyze` and `POST /api/rewrite`. They share one rate-limit budget. `GET /api/health` is infra and is never limited.
 - Default model: provider `google`, model id `gemini-3.5-flash-lite`. Provider and model come from env `LLM_PROVIDER` / `LLM_MODEL`.
 - Text length: 1–5,000 characters after trim. JSON body limit: `20kb`.
-- Defaults (env-overridable): `RATE_LIMIT_PER_MINUTE=5`, `RATE_LIMIT_PER_DAY=50`, `GLOBAL_DAILY_CAP=1000`, `LLM_TIMEOUT_MS=15000`, `TRUST_PROXY=1`, `PORT=3000`.
+- Defaults (env-overridable): `RATE_LIMIT_PER_MINUTE=5`, `RATE_LIMIT_PER_DAY=20`, `GLOBAL_PER_MINUTE=12`, `GLOBAL_DAILY_CAP=400`, `LLM_TIMEOUT_MS=15000`, `TRUST_PROXY=1`, `PORT=3000`.
+- Measured Gemini free-tier quota for `gemini-3.5-flash-lite` (AI Studio, 2026-11-16): **15 RPM, 250K TPM, 500 RPD**, per Google Cloud project. The global caps stay below it so our own 503 fires before Google's 429. Use a dedicated Cloud project/key for the demo, so other usage doesn't eat the quota.
 - Error body shape everywhere: `{ "error": { "code": ErrorCode, "message": string } }`.
 - Exactly 3 suggestions, each ≤ 120 chars; summary ≤ 400 chars; `riskLevel` ∈ `low | medium | high`.
 - Summary and suggestions are written in the language of the email.
@@ -50,7 +51,7 @@ server/src/analysis/prompt.ts    # SYSTEM_PROMPT, buildUserPrompt
 server/src/analysis/analyzer.ts  # Analyzer port + createLlmAnalyzer
 server/src/analysis/errors.ts    # AnalyzerError (timeout | bad_output | provider)
 server/src/llm/model.ts          # createModel(config) → LanguageModel
-server/src/http/rate-limit.ts    # per-IP + global daily limiters
+server/src/http/rate-limit.ts    # per-IP + global (minute + day) limiters
 server/src/http/analyze-route.ts
 server/src/http/rewrite-route.ts
 server/src/http/error-handler.ts
@@ -121,10 +122,10 @@ it('rejects unknown riskLevel', () =>
 - Test: `server/tests/config.test.ts`
 
 **Interfaces:**
-- Produces: `loadConfig(env: NodeJS.ProcessEnv): Config`, where `Config = { port: number; trustProxy: number; llm: { provider: 'google'|'openai'|'anthropic'; model: string; timeoutMs: number }; rateLimit: { perMinute: number; perDay: number; globalDailyCap: number } }`. It throws `Error` listing every invalid key.
+- Produces: `loadConfig(env: NodeJS.ProcessEnv): Config`, where `Config = { port: number; trustProxy: number; llm: { provider: 'google'|'openai'|'anthropic'; model: string; timeoutMs: number }; rateLimit: { perMinute: number; perDay: number; globalPerMinute: number; globalDailyCap: number } }`. It throws `Error` listing every invalid key.
 - Jest maps `@spam-checker/shared` to `../shared/src` through `moduleNameMapper`, so tests don't need a build.
 
-- [ ] **Step 1: Failing tests:** `loadConfig({})` returns the Global Constraints defaults (`port 3000`, `trustProxy 1`, `provider 'google'`, `model 'gemini-3.5-flash-lite'`, `timeoutMs 15000`, `5/50/1000`). `loadConfig({ RATE_LIMIT_PER_MINUTE: 'abc' })` throws a message containing `RATE_LIMIT_PER_MINUTE`. `loadConfig({ LLM_PROVIDER: 'mistral' })` throws.
+- [ ] **Step 1: Failing tests:** `loadConfig({})` returns the Global Constraints defaults (`port 3000`, `trustProxy 1`, `provider 'google'`, `model 'gemini-3.5-flash-lite'`, `timeoutMs 15000`, `5/20/12/400`). `loadConfig({ RATE_LIMIT_PER_MINUTE: 'abc' })` throws a message containing `RATE_LIMIT_PER_MINUTE`. `loadConfig({ LLM_PROVIDER: 'mistral' })` throws.
 - [ ] **Step 2: Run** `npm test -w server -- config` → FAIL.
 - [ ] **Step 3: Implement** with a zod schema and `z.coerce.number().int().positive()`. Don't validate API keys here: the provider SDK reads its own env var.
 - [ ] **Step 4: Run** → PASS.
@@ -194,6 +195,7 @@ it('system prompt pins the contract', () => {
   - The model returns non-JSON text. It rejects with `kind 'bad_output'`.
   - The model's `doGenerate` never resolves and `timeoutMs = 50`. It rejects with `kind 'timeout'` within 500 ms.
   - The model throws a generic `Error`. It rejects with `kind 'provider'`.
+  - The model throws an AI SDK `APICallError` with `statusCode: 429` (Google quota hit despite our caps). It rejects with `kind 'provider'`, and the route maps it to 503 `LLM_UNAVAILABLE`, never to a 429 that would blame the visitor.
 - [ ] **Step 2: Failing model test:** `createModel({provider:'google', model:'gemini-3.5-flash-lite', timeoutMs:1})` returns an object with `modelId === 'gemini-3.5-flash-lite'`.
 - [ ] **Step 3: Run** → FAIL.
 - [ ] **Step 4: Implement.**
@@ -246,7 +248,7 @@ Error mapping:
 
 ---
 
-### Task 6: Rate limiting (per IP + global daily cap) behind a proxy
+### Task 6: Rate limiting (per IP + global caps) behind a proxy
 
 **Files:**
 - Create: `server/src/http/rate-limit.ts`
@@ -255,18 +257,21 @@ Error mapping:
 
 **Interfaces:**
 - Consumes: `Config['rateLimit']`, `createApp` (Task 5)
-- Produces: `createRateLimiters(cfg: Config['rateLimit']): RequestHandler[]`, in order: per-minute IP, per-day IP, global daily.
+- Produces: `createRateLimiters(cfg: Config['rateLimit']): RequestHandler[]`, in order: per-minute IP, per-day IP, global per-minute, global daily.
 
 Behavior:
 - The two IP limiters use `express-rate-limit` with `standardHeaders: 'draft-8'` and `legacyHeaders: false`. They return 429 `RATE_LIMITED` with a `Retry-After` header.
-- The global limiter is express-rate-limit with `keyGenerator: () => 'global'` and a 24 h window. It returns 503 `DAILY_CAP_REACHED`.
+- Global limiters: express-rate-limit with `keyGenerator: () => 'global'`.
+  - The per-minute one (1 min window) returns 503 `LLM_UNAVAILABLE` with `Retry-After`. Many IPs together could otherwise exceed Google's 15 RPM.
+  - The daily one (24 h window) returns 503 `DAILY_CAP_REACHED`.
 - Requests rejected with 400 still count against the limits. This is intentional: it stops someone probing for free.
 
-- [ ] **Step 1: Failing tests** with `perMinute: 2, perDay: 3, globalDailyCap: 4`, the fake analyzer, and `trustProxy: 1`:
+- [ ] **Step 1: Failing tests** with `perMinute: 2, perDay: 3, globalPerMinute: 10, globalDailyCap: 4`, the fake analyzer, and `trustProxy: 1`:
   - 3rd request from the same IP within a minute → 429 `RATE_LIMITED`, `Retry-After` present, analyzer called twice.
   - Two IPs (via `X-Forwarded-For: 1.1.1.1` / `2.2.2.2`) each get their own budget.
   - **Spoofing:** the client sends `X-Forwarded-For: 9.9.9.<n>, 1.1.1.1`, changing the left value on each request. The proxy appends the real IP last, so with `trustProxy 1` `req.ip` stays `1.1.1.1`. The 3rd request → 429.
   - Global cap: 5 requests from 5 different IPs → the 5th gets 503 `DAILY_CAP_REACHED`.
+  - Global minute cap: a separate app with `globalPerMinute: 3, globalDailyCap: 100`. 4 requests from 4 IPs → the 4th gets 503 `LLM_UNAVAILABLE` with `Retry-After`.
   - `GET /api/health` is never limited.
 - [ ] **Step 2: Run** → FAIL.
 - [ ] **Step 3: Implement.** Each test builds a fresh app, so limiter stores never leak between tests.
