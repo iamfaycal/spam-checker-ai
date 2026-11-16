@@ -88,6 +88,7 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - The system prompt says the content is data, never instructions.
   - The output is validated by schema.
   - Output is rendered as text, never HTML.
+  - Rewrite: the suggestions come back from the client, so they are untrusted too. Each is flattened to one line (no injected "4." item) and can't close `<email>` or `<suggestions>`. The rewrite prompt says they only describe edits to this email.
 - **Alternatives:** a second "guard" LLM call (doubles cost and quota).
 - **Consequences:** the worst case is a wrong but well-formed analysis shown to the person who wrote the injection. It can't damage anything else.
 
@@ -126,12 +127,20 @@ New entries are added during the build (see "Working agreement" in the plan). St
 
 - **Decision:** `POST /api/rewrite { text, suggestions[3] } → { rewrittenText }`. The same limiters are mounted once over both routes.
 - **Alternatives:** one route with a `mode` field (a union schema, less readable); separate budgets (would double what one visitor can spend).
-- **Consequences:** each route keeps a single input format and is simpler to test.
+- **Consequences:**
+  - Each route keeps a single input format and is simpler to test.
+  - Both routes share the server code paths: `validateBody(schema)`, one `llmRoute` (abort on disconnect), and one analyzer core (`generate`: timeout, error kinds, final schema guard).
+  - The same limiter instances are mounted on both paths, so one IP has one bucket and the global caps count both. Tests check it, and a mutation with separate limiter sets fails them.
+  - `rewrittenText` is capped at 5,000 characters like the input, so a rewrite can always be re-analyzed.
 
 ## D15 — Rewrite UX: replace + undo — accepted
 
 - **Decision:** the rewritten text replaces the editor content and the previous text is kept for one-click Undo. The analysis becomes outdated. Undo disappears once the user edits by hand.
 - **Alternatives:** a side-by-side diff (nicer, much more UI work).
+- **Consequences:**
+  - `canUndo` is derived: true only while the editor still holds exactly the rewritten text. Any hand edit hides Undo, with no extra bookkeeping. Undo stays offered after re-analyzing the rewrite.
+  - The editor is read-only while a rewrite runs, and the composable refuses to apply a rewrite if the text changed meanwhile, so typed text is never overwritten.
+  - Undo restores the original byte for byte (tested with whitespace, tabs and newlines).
 
 ## D16 — Spam rules ported from the existing tool — accepted
 
@@ -231,6 +240,6 @@ New entries are added during the build (see "Working agreement" in the plan). St
   - `analyzeEmail` returns an analysis validated by the shared schema, or throws `ApiError` with a code (`ErrorCode` or `NETWORK`) and `retryAfterSeconds` read from `Retry-After`.
   - A 200 that breaks the contract is `LLM_BAD_OUTPUT`. An error body that isn't `{ error: { code } }`, such as Traefik's HTML 502 while the server restarts, is `INTERNAL`.
   - A request the client aborted on purpose stays an `AbortError`. `useAiAnalysis` drops any outcome, answer or error, of a request that a newer one replaced (D12).
-  - `errorMessage` is an exhaustive `switch`, so adding a code without copy fails the type check. Codes the plan didn't list map to: `PAYLOAD_TOO_LARGE` → the input message; `NOT_FOUND` and `INTERNAL` → "Something went wrong. Try again."; `RATE_LIMITED` with no `Retry-After` → "try again shortly".
+  - `errorMessage` is an exhaustive `switch`, so adding a code without copy fails the type check. It names the action that failed ("couldn't analyze" or "couldn't rewrite"). The rate-limit copy says "Too many AI requests", because analyze and rewrite share one budget. Codes the plan didn't list map to: `PAYLOAD_TOO_LARGE` → the input message; `NOT_FOUND` and `INTERNAL` → "Something went wrong. Try again."; `RATE_LIMITED` with no `Retry-After` → "try again shortly".
 - **Alternatives:** showing the server's `message` field (couples the UI to server wording, D11); mapping unknown bodies by HTTP status (guesses about responses we don't control).
 - **Consequences:** the client bundles zod, the cost of validating responses with the same schema as the server (D1). Measured: JS goes from 36.5 to 61.2 kB gzipped. `zod/mini` would cut that if it ever matters. Vite aliases `@spam-checker/shared` to its source, so the client never needs a prior build.

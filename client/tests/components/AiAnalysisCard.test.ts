@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AnalysisResult } from '@spam-checker/shared'
 import AiAnalysisCard from '../../src/components/AiAnalysisCard.vue'
 import type { AnalysisStatus } from '../../src/composables/useAiAnalysis'
+import type { RewriteStatus } from '../../src/composables/useRewrite'
 import { ApiError } from '../../src/lib/api'
 
 const RESULT: AnalysisResult = {
@@ -17,11 +18,23 @@ interface Props {
   error: ApiError | null
   isStale: boolean
   disabledReason?: string
+  rewriteStatus: RewriteStatus
+  rewriteError: ApiError | null
+  canUndo: boolean
 }
 
 function card(props: Partial<Props> = {}) {
   return mount(AiAnalysisCard, {
-    props: { status: 'idle', result: null, error: null, isStale: false, ...props },
+    props: {
+      status: 'idle',
+      result: null,
+      error: null,
+      isStale: false,
+      rewriteStatus: 'idle',
+      rewriteError: null,
+      canUndo: false,
+      ...props,
+    },
   })
 }
 
@@ -76,10 +89,35 @@ describe('AiAnalysisCard', () => {
       ).toBe(label),
     )
 
-    it('shows Rewrite with AI as disabled, coming soon', () => {
-      const rewrite = button(card({ status: 'success', result: RESULT }), 'Rewrite with AI')
-      expect(rewrite.attributes('disabled')).toBeDefined()
-      expect(rewrite.attributes('title')).toBe('Coming soon')
+    it('offers Rewrite with AI, which emits rewrite', async () => {
+      const wrapper = card({ status: 'success', result: RESULT })
+      const rewrite = button(wrapper, 'Rewrite with AI')
+      expect(rewrite.attributes('disabled')).toBeUndefined()
+      await rewrite.trigger('click')
+      expect(wrapper.emitted('rewrite')).toHaveLength(1)
+    })
+
+    it('still offers Undo after re-analyzing a rewritten text', async () => {
+      const wrapper = card({ status: 'success', result: RESULT, canUndo: true })
+      await button(wrapper, 'Undo rewrite').trigger('click')
+      expect(wrapper.emitted('undo')).toHaveLength(1)
+      expect(button(wrapper, 'Rewrite with AI').exists()).toBe(true)
+    })
+
+    it('shows the rewrite running, with the button disabled', () => {
+      const wrapper = card({ status: 'success', result: RESULT, rewriteStatus: 'loading' })
+      expect(button(wrapper, 'Rewriting').attributes('disabled')).toBeDefined()
+    })
+
+    it('shows why a rewrite failed', () => {
+      const wrapper = card({
+        status: 'success',
+        result: RESULT,
+        rewriteStatus: 'error',
+        rewriteError: new ApiError('LLM_UNAVAILABLE'),
+      })
+      expect(wrapper.text()).toContain("The AI couldn't rewrite this email. Try again.")
+      expect(button(wrapper, 'Rewrite with AI').attributes('disabled')).toBeUndefined()
     })
 
     it('renders model text literally, never as HTML', () => {
@@ -91,6 +129,21 @@ describe('AiAnalysisCard', () => {
       expect(wrapper.find('img').exists()).toBe(false)
       expect(wrapper.text()).toContain('Risky <b>bold</b>')
     })
+  })
+
+  it('stale: does not offer Rewrite (the suggestions were for another text)', () =>
+    expect(
+      card({ status: 'success', result: RESULT, isStale: true })
+        .findAll('button')
+        .some((b) => b.text().includes('Rewrite with AI')),
+    ).toBe(false))
+
+  it('after a rewrite: offers Undo next to Re-analyze', async () => {
+    const wrapper = card({ status: 'success', result: RESULT, isStale: true, canUndo: true })
+    expect(wrapper.text()).toContain('Rewritten with AI')
+    await button(wrapper, 'Undo').trigger('click')
+    expect(wrapper.emitted('undo')).toHaveLength(1)
+    expect(button(wrapper, 'Re-analyze').exists()).toBe(true)
   })
 
   it('stale: dims the result, says why, and offers Re-analyze', async () => {

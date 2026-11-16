@@ -2,9 +2,10 @@
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import type { AnalysisResult, RiskLevel } from '@spam-checker/shared'
 import type { AnalysisStatus } from '../composables/useAiAnalysis'
+import type { RewriteStatus } from '../composables/useRewrite'
 import { ApiError, errorMessage } from '../lib/api'
 
-/** Presentational: App owns the analysis state (useAiAnalysis) and passes it in. */
+/** Presentational: App owns the analysis and rewrite state (the composables) and passes it in. */
 const props = defineProps<{
   status: AnalysisStatus
   result: AnalysisResult | null
@@ -12,8 +13,12 @@ const props = defineProps<{
   isStale: boolean
   /** Set when there is nothing valid to analyze; disables the analyze buttons. */
   disabledReason?: string
+  rewriteStatus: RewriteStatus
+  rewriteError: ApiError | null
+  /** The editor still holds the AI rewrite, so the previous text can be restored. */
+  canUndo: boolean
 }>()
-defineEmits<{ analyze: [] }>()
+defineEmits<{ analyze: []; rewrite: []; undo: [] }>()
 
 const titleId = useId()
 
@@ -51,6 +56,10 @@ const message = computed(() => {
     ? errorMessage(new ApiError('RATE_LIMITED', secondsLeft.value))
     : 'You can try again now.'
 })
+
+const rewriteMessage = computed(() =>
+  props.rewriteError ? errorMessage(props.rewriteError, 'rewrite') : '',
+)
 
 const canAnalyze = computed(() => !props.disabledReason)
 </script>
@@ -102,7 +111,9 @@ const canAnalyze = computed(() => !props.disabledReason)
       </button>
 
       <template v-else-if="status === 'success' && isStale">
-        <p class="ai-card__note">Text changed since this analysis</p>
+        <p class="ai-card__note">
+          {{ canUndo ? 'Rewritten with AI. ' : '' }}Text changed since this analysis
+        </p>
         <button
           type="button"
           class="btn btn--primary"
@@ -111,17 +122,39 @@ const canAnalyze = computed(() => !props.disabledReason)
         >
           Re-analyze
         </button>
+        <button
+          v-if="canUndo"
+          type="button"
+          class="btn btn--secondary btn--spaced"
+          @click="$emit('undo')"
+        >
+          Undo rewrite
+        </button>
       </template>
 
-      <button
-        v-else-if="status === 'success'"
-        type="button"
-        class="btn btn--secondary"
-        title="Coming soon"
-        disabled
-      >
-        ✦ Rewrite with AI
-      </button>
+      <!-- Rewrite applies these suggestions, so it's only offered while they match the text. -->
+      <template v-else-if="status === 'success'">
+        <button
+          type="button"
+          class="btn btn--secondary"
+          :disabled="rewriteStatus === 'loading'"
+          @click="$emit('rewrite')"
+        >
+          {{ rewriteStatus === 'loading' ? 'Rewriting…' : '✦ Rewrite with AI' }}
+        </button>
+        <p v-if="rewriteStatus === 'error'" class="ai-card__error ai-card__error--below">
+          {{ rewriteMessage }}
+        </p>
+        <!-- After re-analyzing a rewrite, the original can still be brought back. -->
+        <button
+          v-if="canUndo"
+          type="button"
+          class="btn btn--secondary btn--spaced"
+          @click="$emit('undo')"
+        >
+          Undo rewrite
+        </button>
+      </template>
 
       <button
         v-else-if="status === 'error'"
@@ -216,6 +249,11 @@ const canAnalyze = computed(() => !props.disabledReason)
   font-size: 0.925rem;
 }
 
+.ai-card__error--below {
+  margin-top: 0.5rem;
+  font-size: 0.825rem;
+}
+
 .ai-card__actions {
   margin-top: 0.875rem;
 }
@@ -253,6 +291,9 @@ const canAnalyze = computed(() => !props.disabledReason)
 }
 .btn--primary:not(:disabled):hover {
   background: var(--ai-hover);
+}
+.btn--spaced {
+  margin-top: 0.5rem;
 }
 .btn--secondary {
   border-color: var(--ai);

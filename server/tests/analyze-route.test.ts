@@ -20,7 +20,7 @@ const config = loadConfig({})
 
 function fakeAnalyzer(impl: Analyzer['analyze'] = async () => RESULT) {
   const analyze = jest.fn(impl)
-  return { analyzer: { analyze }, analyze }
+  return { analyzer: { analyze, rewrite: jest.fn<Analyzer['rewrite']>() }, analyze }
 }
 
 const appWith = (analyzer: Analyzer) => createApp({ analyzer, config })

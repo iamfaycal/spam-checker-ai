@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AnalysisResult, ErrorCode } from '@spam-checker/shared'
-import { ApiError, analyzeEmail, errorMessage } from '../../src/lib/api'
+import { ApiError, analyzeEmail, errorMessage, rewriteEmail } from '../../src/lib/api'
 
 const RESULT: AnalysisResult = {
   summary: 'High risk.',
@@ -98,8 +98,8 @@ describe('analyzeEmail', () => {
 
 describe('errorMessage', () => {
   it.each([
-    ['RATE_LIMITED', 42, 'Too many analyses — try again in 42s.'],
-    ['RATE_LIMITED', undefined, 'Too many analyses — try again shortly.'],
+    ['RATE_LIMITED', 42, 'Too many AI requests — try again in 42s.'],
+    ['RATE_LIMITED', undefined, 'Too many AI requests — try again shortly.'],
     ['DAILY_CAP_REACHED', undefined, "The demo's daily AI quota is used up. Try again tomorrow."],
     ['INVALID_INPUT', undefined, 'Add some text (max 5,000 characters).'],
     ['PAYLOAD_TOO_LARGE', undefined, 'Add some text (max 5,000 characters).'],
@@ -112,4 +112,31 @@ describe('errorMessage', () => {
   ] as const)('%s (retry %s) → %s', (code: ErrorCode | 'NETWORK', retry, message) =>
     expect(errorMessage(new ApiError(code, retry))).toBe(message),
   )
+
+  it('names the action that failed', () =>
+    expect(errorMessage(new ApiError('LLM_TIMEOUT'), 'rewrite')).toBe(
+      "The AI couldn't rewrite this email. Try again.",
+    ))
+})
+
+describe('rewriteEmail', () => {
+  it('POSTs the text and suggestions to /api/rewrite and returns the rewrite', async () => {
+    const fetchMock = stubFetch(async () => json(200, { rewrittenText: 'Hi Marie' }))
+    await expect(rewriteEmail('Dear friend', ['a', 'b', 'c'])).resolves.toEqual({
+      rewrittenText: 'Hi Marie',
+    })
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe('/api/rewrite')
+    expect(JSON.parse(String(init?.body))).toEqual({
+      text: 'Dear friend',
+      suggestions: ['a', 'b', 'c'],
+    })
+  })
+
+  it('rejects an empty rewrite as LLM_BAD_OUTPUT', async () => {
+    stubFetch(async () => json(200, { rewrittenText: '' }))
+    expect(await errorOf(rewriteEmail('Hi', ['a', 'b', 'c']))).toMatchObject({
+      code: 'LLM_BAD_OUTPUT',
+    })
+  })
 })

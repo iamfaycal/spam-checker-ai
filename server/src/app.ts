@@ -1,11 +1,17 @@
 import { resolve } from 'node:path'
 import express, { type Express } from 'express'
 import helmet from 'helmet'
-import { AnalyzeRequestSchema, MAX_TEXT_LENGTH } from '@spam-checker/shared'
+import {
+  AnalyzeRequestSchema,
+  MAX_TEXT_LENGTH,
+  RewriteRequestSchema,
+  type AnalyzeRequest,
+  type RewriteRequest,
+} from '@spam-checker/shared'
 import type { Analyzer } from './analysis/analyzer.js'
 import type { Config } from './config.js'
-import { analyzeRoute } from './http/analyze-route.js'
 import { errorHandler, sendError } from './http/error-handler.js'
+import { llmRoute } from './http/llm-route.js'
 import { createRateLimiters } from './http/rate-limit.js'
 import { validateBody } from './http/validate-body.js'
 
@@ -28,10 +34,11 @@ export function createApp(deps: AppDeps): Express {
     res.json({ status: 'ok' })
   })
 
+  // One set of limiters for both LLM routes: one budget per IP, one global quota (D6, D14).
   const limits = createRateLimiters(deps.config.rateLimit)
   const api = express.Router()
   // Per IP, before body parsing: malformed and oversized requests count too (D8).
-  api.use('/analyze', ...limits.perIp)
+  api.use(['/analyze', '/rewrite'], ...limits.perIp)
   api.use(express.json({ limit: '20kb' }))
   api.post(
     '/analyze',
@@ -40,7 +47,18 @@ export function createApp(deps: AppDeps): Express {
       `Send { "text": "..." } with 1 to ${MAX_TEXT_LENGTH} characters.`,
     ),
     ...limits.global, // after validation: only requests that reach the LLM spend the shared quota
-    analyzeRoute(deps.analyzer),
+    llmRoute<AnalyzeRequest>((body, signal) => deps.analyzer.analyze(body.text, signal)),
+  )
+  api.post(
+    '/rewrite',
+    validateBody(
+      RewriteRequestSchema,
+      `Send { "text": "...", "suggestions": [3 strings] } with 1 to ${MAX_TEXT_LENGTH} characters of text.`,
+    ),
+    ...limits.global,
+    llmRoute<RewriteRequest>((body, signal) =>
+      deps.analyzer.rewrite(body.text, body.suggestions, signal),
+    ),
   )
   // Anything else under /api: same error shape as every other API error (D11).
   api.use((_req, res) => sendError(res, 404, 'NOT_FOUND', 'No such API route.'))

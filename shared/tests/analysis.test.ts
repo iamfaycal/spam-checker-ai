@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { AnalysisResultSchema, AnalyzeRequestSchema, MAX_TEXT_LENGTH } from '../src/index.js'
+import {
+  AnalysisResultSchema,
+  AnalyzeRequestSchema,
+  MAX_TEXT_LENGTH,
+  RewriteRequestSchema,
+  RewriteResultSchema,
+} from '../src/index.js'
 
 describe('AnalyzeRequestSchema', () => {
   it('trims and accepts valid text', () =>
@@ -49,4 +55,37 @@ describe('AnalysisResultSchema', () => {
     expect(AnalysisResultSchema.safeParse({ ...valid, summary: 's'.repeat(401) }).success).toBe(
       false,
     ))
+})
+
+describe('RewriteRequestSchema', () => {
+  const valid = { text: '  Hello  ', suggestions: ['a', 'b', 'c'] }
+
+  it('trims the text and accepts 3 suggestions', () =>
+    expect(RewriteRequestSchema.parse(valid)).toEqual({
+      text: 'Hello',
+      suggestions: ['a', 'b', 'c'],
+    }))
+
+  it('rejects 2 suggestions', () =>
+    expect(RewriteRequestSchema.safeParse({ ...valid, suggestions: ['a', 'b'] }).success).toBe(
+      false,
+    ))
+
+  it('rejects a missing suggestions field', () =>
+    expect(RewriteRequestSchema.safeParse({ text: 'Hello' }).success).toBe(false))
+
+  it('rejects text over 5000 chars', () =>
+    expect(RewriteRequestSchema.safeParse({ ...valid, text: 'a'.repeat(5001) }).success).toBe(
+      false,
+    ))
+})
+
+describe('RewriteResultSchema', () => {
+  it('accepts a rewritten text', () =>
+    expect(RewriteResultSchema.parse({ rewrittenText: 'Hi' })).toEqual({ rewrittenText: 'Hi' }))
+
+  it('rejects an empty or over-long rewrite', () => {
+    expect(RewriteResultSchema.safeParse({ rewrittenText: '' }).success).toBe(false)
+    expect(RewriteResultSchema.safeParse({ rewrittenText: 'a'.repeat(5001) }).success).toBe(false)
+  })
 })

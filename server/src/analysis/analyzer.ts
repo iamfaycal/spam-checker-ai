@@ -6,43 +6,74 @@ import {
   generateText,
   type LanguageModel,
 } from 'ai'
-import { AnalysisResultSchema, type AnalysisResult } from '@spam-checker/shared'
+import type { z } from 'zod'
+import {
+  AnalysisResultSchema,
+  RewriteResultSchema,
+  type AnalysisResult,
+  type RewriteResult,
+} from '@spam-checker/shared'
 import { AnalyzerError } from './errors.js'
-import { SYSTEM_PROMPT, buildUserPrompt } from './prompt.js'
+import {
+  REWRITE_SYSTEM_PROMPT,
+  SYSTEM_PROMPT,
+  buildRewritePrompt,
+  buildUserPrompt,
+} from './prompt.js'
 
 /** The port the HTTP layer depends on (D3). Tests swap in a fake; main.ts wires the LLM. */
 export interface Analyzer {
   analyze(text: string, signal?: AbortSignal): Promise<AnalysisResult>
+  rewrite(text: string, suggestions: string[], signal?: AbortSignal): Promise<RewriteResult>
 }
 
 export function createLlmAnalyzer(opts: { model: LanguageModel; timeoutMs: number }): Analyzer {
+  /**
+   * One structured LLM call, shared by analyze and rewrite so they can't drift apart:
+   * the timeout, the error classification (D22) and the final schema guard.
+   */
+  async function generate<S extends z.ZodType>(
+    schema: S,
+    instructions: string,
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<z.infer<S>> {
+    // One signal that fires on whichever comes first: our timeout or the caller giving up.
+    const timeout = AbortSignal.timeout(opts.timeoutMs)
+    const abortSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
+
+    let output: unknown
+    try {
+      const result = await generateText({
+        model: opts.model,
+        instructions,
+        prompt,
+        output: Output.object({ schema }),
+        temperature: 0.3,
+        maxRetries: 1,
+        abortSignal,
+      })
+      output = result.output
+    } catch (error) {
+      throw classify(error, timeout, signal)
+    }
+
+    // Final guard: never return something the contract doesn't allow, whatever the SDK did.
+    const parsed = schema.safeParse(output)
+    if (!parsed.success) throw new AnalyzerError('bad_output', { cause: parsed.error })
+    return parsed.data
+  }
+
   return {
-    async analyze(text, signal) {
-      // One signal that fires on whichever comes first: our timeout or the caller giving up.
-      const timeout = AbortSignal.timeout(opts.timeoutMs)
-      const abortSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
-
-      let output: unknown
-      try {
-        const result = await generateText({
-          model: opts.model,
-          instructions: SYSTEM_PROMPT,
-          prompt: buildUserPrompt(text),
-          output: Output.object({ schema: AnalysisResultSchema }),
-          temperature: 0.3,
-          maxRetries: 1,
-          abortSignal,
-        })
-        output = result.output
-      } catch (error) {
-        throw classify(error, timeout, signal)
-      }
-
-      // Final guard: never return something the contract doesn't allow, whatever the SDK did.
-      const parsed = AnalysisResultSchema.safeParse(output)
-      if (!parsed.success) throw new AnalyzerError('bad_output', { cause: parsed.error })
-      return parsed.data
-    },
+    analyze: (text, signal) =>
+      generate(AnalysisResultSchema, SYSTEM_PROMPT, buildUserPrompt(text), signal),
+    rewrite: (text, suggestions, signal) =>
+      generate(
+        RewriteResultSchema,
+        REWRITE_SYSTEM_PROMPT,
+        buildRewritePrompt(text, suggestions),
+        signal,
+      ),
   }
 }
 
